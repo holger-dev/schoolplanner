@@ -1,0 +1,23 @@
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+dist/
+js/
+css/
+vendor/
+.env
+.env.local
+
+# Nextcloud runtime and app data
+.nextcloud/
+docker/nextcloud/html/
+docker/nextcloud/data/
+docker/db/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+

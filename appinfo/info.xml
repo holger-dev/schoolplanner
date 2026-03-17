@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+	<id>schoolplanner</id>
+	<name>School Planner</name>
+	<summary>Lesson planning tool for teachers with publish workflow</summary>
+	<description>Plan courses, lessons and lesson flow elements inside Nextcloud and publish selected content to an external web server.</description>
+	<version>0.1.0</version>
+	<licence>agpl</licence>
+	<author mail="dev@example.invalid">Codex</author>
+	<namespace>SchoolPlanner</namespace>
+	<category>organization</category>
+	<bugs>https://example.invalid/schoolplanner/issues</bugs>
+	<dependencies>
+		<nextcloud min-version="33" max-version="33"/>
+	</dependencies>
+	<navigations>
+		<navigation>
+			<name>School Planner</name>
+			<route>schoolplanner.page.index</route>
+			<icon>app.svg</icon>
+			<order>20</order>
+		</navigation>
+	</navigations>
+</info>

@@ -1,0 +1,29 @@
+{
+  "name": "schoolplanner",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "NODE_ENV=production webpack --config webpack.js",
+    "dev": "NODE_ENV=development webpack --config webpack.js",
+    "watch": "NODE_ENV=development webpack --config webpack.js --watch"
+  },
+  "dependencies": {
+    "@nextcloud/axios": "^2.5.2",
+    "@nextcloud/dialogs": "^7.3.0",
+    "@nextcloud/initial-state": "^3.0.0",
+    "@nextcloud/l10n": "^3.4.1",
+    "@nextcloud/router": "^3.1.0",
+    "@nextcloud/vue": "^9.6.0",
+    "markdown-it": "^14.1.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@nextcloud/webpack-vue-config": "^7.0.2",
+    "css-loader": "^7.1.2",
+    "sass": "^1.86.0",
+    "sass-loader": "^16.0.5",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^6.0.1"
+  }
+}
