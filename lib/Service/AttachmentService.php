@@ -45,7 +45,6 @@ class AttachmentService {
 			throw new \RuntimeException('Upload-Datei konnte nicht gelesen werden.');
 		}
 		$folder->newFile($storedName, $stream);
-		fclose($stream);
 
 		$now = new DateTimeImmutable();
 		$query = $this->connection->getQueryBuilder();
