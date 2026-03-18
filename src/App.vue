@@ -131,6 +131,13 @@
 						label="Ziel der Stunde"
 						placeholder="z. B. SuS verstehen Variablen und erste Python-Skripte" />
 
+					<NcNoteCard v-if="previousLessonReflection" type="warning">
+						<div class="lesson-reflection-preview">
+							<strong>Fazit aus der letzten Stunde</strong>
+							<p>{{ previousLessonReflection }}</p>
+						</div>
+					</NcNoteCard>
+
 					<NcTextArea
 						v-model="lessonDraft.description"
 						label="Beschreibung (Markdown)"
@@ -263,6 +270,13 @@
 							<NcButton @click="handleCreateItem">Element hinzufügen</NcButton>
 						</div>
 					</div>
+
+					<NcTextArea
+						v-model="lessonDraft.reflection"
+						label="Fazit der Stunde"
+						helper-text="Dieses Feld ist nur intern und wird nicht veröffentlicht."
+						resize="vertical"
+						@update:model-value="scheduleLessonReflectionAutosave" />
 				</div>
 
 				<NcEmptyContent
@@ -392,12 +406,14 @@ export default {
 			},
 			publishInProgress: false,
 			itemAutosaveTimers: {},
+			lessonReflectionAutosaveTimer: null,
 			lessonDraft: {
 				id: null,
 				lessonDate: '',
 				title: '',
 				goal: '',
 				description: '',
+				reflection: '',
 			},
 			icons: {
 				arrowUp: mdiArrowUp,
@@ -430,13 +446,28 @@ export default {
 					: ''
 			},
 		},
+		previousLessonReflection() {
+			if (!this.selectedLesson) {
+				return ''
+			}
+			const lessons = this.sortedLessons
+			const currentIndex = lessons.findIndex((lesson) => lesson.id === this.selectedLesson.id)
+			if (currentIndex <= 0) {
+				return ''
+			}
+			return lessons[currentIndex - 1]?.reflection || ''
+		},
 	},
 	watch: {
 		selectedLesson: {
 			immediate: true,
 			handler(lesson) {
+				if (this.lessonReflectionAutosaveTimer) {
+					window.clearTimeout(this.lessonReflectionAutosaveTimer)
+					this.lessonReflectionAutosaveTimer = null
+				}
 				if (!lesson) {
-					this.lessonDraft = { id: null, lessonDate: '', title: '', goal: '', description: '' }
+					this.lessonDraft = { id: null, lessonDate: '', title: '', goal: '', description: '', reflection: '' }
 					return
 				}
 
@@ -446,6 +477,7 @@ export default {
 					title: lesson.title,
 					goal: lesson.goal || '',
 					description: lesson.description,
+					reflection: lesson.reflection || '',
 				}
 			},
 		},
@@ -457,6 +489,9 @@ export default {
 		Object.values(this.itemAutosaveTimers).forEach((timerId) => {
 			window.clearTimeout(timerId)
 		})
+		if (this.lessonReflectionAutosaveTimer) {
+			window.clearTimeout(this.lessonReflectionAutosaveTimer)
+		}
 	},
 	methods: {
 		async loadBootstrap() {
@@ -598,6 +633,7 @@ export default {
 					title: 'Neue Stunde',
 					goal: '',
 					description: '',
+					reflection: '',
 				})
 				this.selectedCourse.lessons.push(lesson)
 				this.selectLesson(lesson.id)
@@ -610,6 +646,11 @@ export default {
 				return
 			}
 
+			if (this.lessonReflectionAutosaveTimer) {
+				window.clearTimeout(this.lessonReflectionAutosaveTimer)
+				this.lessonReflectionAutosaveTimer = null
+			}
+
 			try {
 				const lesson = await updateLesson(this.lessonDraft.id, this.lessonDraft)
 				this.replaceLesson(lesson)
@@ -617,6 +658,23 @@ export default {
 			} catch (error) {
 				showError('Stunde konnte nicht gespeichert werden.')
 			}
+		},
+		scheduleLessonReflectionAutosave() {
+			if (!this.lessonDraft.id) {
+				return
+			}
+			if (this.lessonReflectionAutosaveTimer) {
+				window.clearTimeout(this.lessonReflectionAutosaveTimer)
+			}
+			this.lessonReflectionAutosaveTimer = window.setTimeout(async () => {
+				this.lessonReflectionAutosaveTimer = null
+				try {
+					const lesson = await updateLesson(this.lessonDraft.id, this.lessonDraft)
+					this.replaceLesson(lesson)
+				} catch (error) {
+					// Keep autosave quiet; the explicit save button still surfaces errors.
+				}
+			}, 900)
 		},
 		async removeLesson(lessonId = this.selectedLesson?.id) {
 			if (!lessonId || !this.selectedCourse) {
@@ -710,7 +768,7 @@ export default {
 				}
 			})
 			item.isCurrent = isCurrent
-			await this.saveItem(item, { triggerPublish: true })
+			await this.saveItem(item)
 		},
 		async removeItem(itemId) {
 			if (!this.selectedLesson || !itemId) {

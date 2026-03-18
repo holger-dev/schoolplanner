@@ -105,6 +105,7 @@ class PlannerService {
 				'title' => $query->createNamedParameter(trim((string)($payload['title'] ?? 'Neue Stunde')) ?: 'Neue Stunde'),
 				'goal' => $query->createNamedParameter(trim((string)($payload['goal'] ?? ''))),
 				'description' => $query->createNamedParameter((string)($payload['description'] ?? '')),
+				'reflection' => $query->createNamedParameter((string)($payload['reflection'] ?? '')),
 				'sort_order' => $query->createNamedParameter((int)($payload['sortOrder'] ?? 0), IQueryBuilder::PARAM_INT),
 				'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
 				'updated_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
@@ -128,6 +129,7 @@ class PlannerService {
 			->set('title', $query->createNamedParameter(trim((string)($payload['title'] ?? $lesson['title'])) ?: 'Neue Stunde'))
 			->set('goal', $query->createNamedParameter(trim((string)($payload['goal'] ?? $lesson['goal']))))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? $lesson['description'])))
+			->set('reflection', $query->createNamedParameter((string)($payload['reflection'] ?? $lesson['reflection'])))
 			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
 			->where($query->expr()->eq('id', $query->createNamedParameter($lessonId)))
 			->executeStatement();
@@ -454,6 +456,7 @@ class PlannerService {
 			'title' => (string)$row['title'],
 			'goal' => (string)($row['goal'] ?? ''),
 			'description' => (string)($row['description'] ?? ''),
+			'reflection' => (string)($row['reflection'] ?? ''),
 			'items' => [],
 		];
 	}
