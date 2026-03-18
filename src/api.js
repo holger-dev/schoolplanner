@@ -20,6 +20,11 @@ export const updateCourse = async (courseId, payload) => {
 	return data
 }
 
+export const deleteCourse = async (courseId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/delete`))
+	return data
+}
+
 export const createLesson = async (courseId, payload) => {
 	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/lessons`), payload, { headers: jsonHeaders })
 	return data
@@ -31,7 +36,7 @@ export const updateLesson = async (lessonId, payload) => {
 }
 
 export const deleteLesson = async (lessonId) => {
-	const { data } = await axios.delete(generateUrl(`/apps/schoolplanner/api/lessons/${lessonId}`))
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/lessons/${lessonId}/delete`))
 	return data
 }
 
@@ -42,6 +47,11 @@ export const createLessonItem = async (lessonId, payload) => {
 
 export const updateLessonItem = async (itemId, payload) => {
 	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/items/${itemId}`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const deleteLessonItem = async (itemId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/items/${itemId}/delete`))
 	return data
 }
 

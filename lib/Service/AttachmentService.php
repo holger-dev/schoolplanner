@@ -110,6 +110,28 @@ class AttachmentService {
 		return $file->getContent();
 	}
 
+	public function deleteAttachmentsForItem(string $userId, int $itemId): void {
+		$this->plannerService->getLessonItem($itemId, $userId);
+
+		$attachments = $this->getAttachmentsForItem($itemId);
+		try {
+			$folder = $this->getItemFolder($itemId, false);
+			foreach ($attachments as $attachment) {
+				try {
+					$folder->getFile((string)$attachment['storedName'])->delete();
+				} catch (NotFoundException $exception) {
+				}
+			}
+			$folder->delete();
+		} catch (NotFoundException $exception) {
+		}
+
+		$query = $this->connection->getQueryBuilder();
+		$query->delete('schoolplanner_attachments')
+			->where($query->expr()->eq('item_id', $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
+	}
+
 	private function getItemFolder(int $itemId, bool $createIfMissing) {
 		$appData = $this->appDataFactory->get(Application::APP_ID);
 		$baseFolder = $this->getOrCreateFolder($appData, 'attachments', $createIfMissing);

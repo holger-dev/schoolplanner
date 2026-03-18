@@ -1,5 +1,13 @@
 <template>
 	<NcContent app-name="schoolplanner">
+		<div v-if="publishInProgress" class="publish-overlay" aria-live="polite" aria-busy="true">
+			<div class="publish-overlay__card">
+				<NcLoadingIcon :size="48" />
+				<strong>Publishing läuft…</strong>
+				<span>Die veröffentlichten Inhalte werden gerade aktualisiert.</span>
+			</div>
+		</div>
+
 		<NcAppNavigation aria-label="Kurse">
 			<template #list>
 				<NcAppNavigationNew text="Kurs anlegen" @click="openCreateCourseModal" />
@@ -40,9 +48,9 @@
 		</NcAppNavigation>
 
 		<NcAppContent
-			:list-size="34"
-			:list-min-width="28"
-			:list-max-width="42"
+			:list-size="22"
+			:list-min-width="18"
+			:list-max-width="24"
 			layout="vertical-split"
 			:show-details="Boolean(selectedLesson)"
 			page-heading="School Planner"
@@ -53,8 +61,8 @@
 					<div class="list-panel">
 					<div class="list-panel__header">
 						<div>
-							<h2>{{ selectedCourse ? selectedCourse.name : 'Kein Kurs ausgewaehlt' }}</h2>
-							<p>{{ selectedCourse ? selectedCourse.description || 'Noch keine Kursbeschreibung.' : 'Bitte links einen Kurs anlegen oder auswaehlen.' }}</p>
+							<h2>{{ selectedCourse ? selectedCourse.name : 'Kein Kurs ausgewählt' }}</h2>
+							<p>{{ selectedCourse ? selectedCourse.description || 'Noch keine Kursbeschreibung.' : 'Bitte links einen Kurs anlegen oder auswählen.' }}</p>
 						</div>
 					</div>
 
@@ -62,13 +70,14 @@
 
 					<div class="list-panel__actions" v-if="selectedCourse">
 						<NcButton type="primary" @click="handleCreateLesson">Neue Stunde</NcButton>
-						<NcButton @click="handlePublishCourse">Makroplanung veroeffentlichen</NcButton>
+						<NcButton @click="handlePublishCourse">Makroplanung veröffentlichen</NcButton>
+						<NcButton @click="confirmRemoveCourse">Kurs löschen</NcButton>
 					</div>
 
 						<NcEmptyContent
 							v-if="!selectedCourse"
 							name="Noch kein Kurs"
-							description="Lege links einen Kurs an oder waehle einen vorhandenen Kurs aus." />
+							description="Lege links einen Kurs an oder wähle einen vorhandenen Kurs aus." />
 
 						<div v-else class="lesson-list">
 							<NcAppNavigationItem
@@ -80,9 +89,10 @@
 								@click="selectLesson(lesson.id)">
 								<template #default>
 									<div class="lesson-entry">
-										<strong>{{ formatDate(lesson.lessonDate) }}</strong>
-										<span>{{ lesson.title }}</span>
-										<small>{{ lesson.items.filter((item) => item.published).length }} veroeffentlicht</small>
+										<div class="lesson-entry__meta">
+											<span>{{ formatDate(lesson.lessonDate) }}</span>
+											<span>{{ truncateText(lesson.goal || 'Noch kein Ziel', 30) }}</span>
+										</div>
 									</div>
 								</template>
 							</NcAppNavigationItem>
@@ -99,7 +109,7 @@
 							<p>Datum, Thema und Beschreibung der Unterrichtseinheit.</p>
 						</div>
 						<div class="details-panel__actions">
-							<NcButton @click="removeLesson">Stunde loeschen</NcButton>
+							<NcButton @click="confirmRemoveLesson">Stunde löschen</NcButton>
 							<NcButton type="primary" @click="saveLesson">Stunde speichern</NcButton>
 						</div>
 					</div>
@@ -116,6 +126,11 @@
 							placeholder="z. B. Einfuehrung Python" />
 					</div>
 
+					<NcTextField
+						v-model="lessonDraft.goal"
+						label="Ziel der Stunde"
+						placeholder="z. B. SuS verstehen Variablen und erste Python-Skripte" />
+
 					<NcTextArea
 						v-model="lessonDraft.description"
 						label="Beschreibung (Markdown)"
@@ -124,7 +139,7 @@
 					<div class="details-panel__header details-panel__header--sub">
 						<div>
 							<h2>Stundenablauf</h2>
-							<p>Elemente koennen einzeln veroeffentlicht werden.</p>
+							<p>Elemente können einzeln veröffentlicht werden.</p>
 						</div>
 						<NcButton @click="handleCreateItem">Element anlegen</NcButton>
 					</div>
@@ -132,40 +147,95 @@
 					<NcEmptyContent
 						v-if="selectedLesson.items.length === 0"
 						name="Noch keine Ablauf-Elemente"
-						description="Lege das erste Element fuer diese Stunde an." />
+						description="Lege das erste Element für diese Stunde an." />
 
 					<div v-else class="item-list">
 						<NcNoteCard
 							v-for="item in selectedLesson.items"
 							:key="item.id"
+							class="item-card"
 							type="info">
 							<div class="item-form">
-								<div class="item-form__header">
+								<div class="item-form__toolbar">
 									<div class="item-form__main">
 										<NcTextField
 											v-model="item.title"
 											label="Titel"
-											placeholder="Titel des Elements" />
+											placeholder="Titel des Elements"
+											@update:model-value="scheduleItemAutosave(item)" />
 									</div>
-									<div class="item-form__controls">
+									<div class="item-form__toolbar-actions">
+										<NcButton
+											aria-label="Element löschen"
+											title="Element löschen"
+											variant="tertiary"
+											@click="confirmRemoveItem(item)">
+											<template #icon>
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.delete" />
+												</svg>
+											</template>
+										</NcButton>
+										<NcButton
+											:disabled="isFirstItem(item)"
+											aria-label="Nach oben"
+											title="Nach oben"
+											variant="tertiary"
+											@click="moveItem(item, -1)">
+											<template #icon>
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.arrowUp" />
+												</svg>
+											</template>
+										</NcButton>
+										<NcButton
+											:disabled="isLastItem(item)"
+											aria-label="Nach unten"
+											title="Nach unten"
+											variant="tertiary"
+											@click="moveItem(item, 1)">
+											<template #icon>
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.arrowDown" />
+												</svg>
+											</template>
+										</NcButton>
+										<NcButton
+											aria-label="Element speichern"
+											title="Element speichern"
+											variant="tertiary"
+											@click="saveItem(item)">
+											<template #icon>
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.save" />
+												</svg>
+											</template>
+										</NcButton>
 										<NcCheckboxRadioSwitch
+											class="item-form__current-toggle"
+											:model-value="item.isCurrent"
+											type="checkbox"
+											@update:model-value="toggleItemCurrent(item, $event)">
+											Aktuell
+										</NcCheckboxRadioSwitch>
+										<NcCheckboxRadioSwitch
+											class="item-form__publish-toggle"
 											:model-value="item.published"
 											type="switch"
 											@update:model-value="toggleItemPublished(item, $event)">
-											Veroeffentlichen
+											Veröffentlichen
 										</NcCheckboxRadioSwitch>
-										<div class="item-form__order-buttons">
-											<NcButton :disabled="isFirstItem(item)" @click="moveItem(item, -1)">Nach oben</NcButton>
-											<NcButton :disabled="isLastItem(item)" @click="moveItem(item, 1)">Nach unten</NcButton>
-										</div>
 									</div>
 								</div>
 
 								<NcTextArea
 									v-model="item.description"
+									class="item-form__description"
 									label="Beschreibung (Markdown)"
+									rows="12"
 									input-class="item-form__textarea"
-									resize="vertical" />
+									resize="vertical"
+									@update:model-value="scheduleItemAutosave(item)" />
 
 								<div class="item-form__attachments">
 									<div class="item-form__attachments-header">
@@ -186,19 +256,19 @@
 									</ul>
 									<p v-else>Noch keine Dateien hochgeladen.</p>
 								</div>
-
-								<div class="item-form__actions">
-									<NcButton type="primary" @click="saveItem(item)">Element speichern</NcButton>
-								</div>
 							</div>
 						</NcNoteCard>
+
+						<div class="item-list__footer">
+							<NcButton @click="handleCreateItem">Element hinzufügen</NcButton>
+						</div>
 					</div>
 				</div>
 
 				<NcEmptyContent
 					v-else
-					name="Keine Stunde ausgewaehlt"
-					description="Waehle links eine Stunde aus, um den Ablauf zu bearbeiten." />
+					name="Keine Stunde ausgewählt"
+					description="Wähle links eine Stunde aus, um den Ablauf zu bearbeiten." />
 			</NcAppContentDetails>
 		</NcAppContent>
 
@@ -222,11 +292,25 @@
 				</div>
 			</div>
 		</NcModal>
+
+		<NcModal v-if="confirmModalOpen" size="normal" :name="confirmDialog.title" @close="closeConfirmModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>{{ confirmDialog.title }}</h2>
+					<p>{{ confirmDialog.message }}</p>
+				</div>
+				<div class="dialog-actions">
+					<NcButton @click="closeConfirmModal">Abbrechen</NcButton>
+					<NcButton type="primary" @click="performConfirmedAction">Löschen</NcButton>
+				</div>
+			</div>
+		</NcModal>
 	</NcContent>
 </template>
 
 <script>
 import { showError, showSuccess } from '@nextcloud/dialogs'
+import { mdiArrowDown, mdiArrowUp, mdiContentSave, mdiDelete } from '@mdi/js'
 import {
 	NcAppContent,
 	NcAppContentDetails,
@@ -239,8 +323,8 @@ import {
 	NcCheckboxRadioSwitch,
 	NcContent,
 	NcDateTimePickerNative,
-	NcDialog,
 	NcEmptyContent,
+	NcLoadingIcon,
 	NcModal,
 	NcNoteCard,
 	NcTextArea,
@@ -248,9 +332,11 @@ import {
 } from '@nextcloud/vue'
 import {
 	createCourse,
-	deleteLesson,
 	createLesson,
 	createLessonItem,
+	deleteCourse,
+	deleteLesson,
+	deleteLessonItem,
 	fetchBootstrap,
 	publishCourse,
 	saveSettings,
@@ -274,8 +360,8 @@ export default {
 		NcCheckboxRadioSwitch,
 		NcContent,
 		NcDateTimePickerNative,
-		NcDialog,
 		NcEmptyContent,
+		NcLoadingIcon,
 		NcModal,
 		NcNoteCard,
 		NcTextArea,
@@ -292,16 +378,32 @@ export default {
 				name: '',
 				description: '',
 			},
+			confirmModalOpen: false,
+			confirmDialog: {
+				action: null,
+				title: '',
+				message: '',
+				itemId: null,
+			},
 			settingsDraft: {
 				sftpUsername: '',
 				sftpPassword: '',
 				publicBaseUrl: '',
 			},
+			publishInProgress: false,
+			itemAutosaveTimers: {},
 			lessonDraft: {
 				id: null,
 				lessonDate: '',
 				title: '',
+				goal: '',
 				description: '',
+			},
+			icons: {
+				arrowUp: mdiArrowUp,
+				arrowDown: mdiArrowDown,
+				save: mdiContentSave,
+				delete: mdiDelete,
 			},
 		}
 	},
@@ -334,7 +436,7 @@ export default {
 			immediate: true,
 			handler(lesson) {
 				if (!lesson) {
-					this.lessonDraft = { id: null, lessonDate: '', title: '', description: '' }
+					this.lessonDraft = { id: null, lessonDate: '', title: '', goal: '', description: '' }
 					return
 				}
 
@@ -342,6 +444,7 @@ export default {
 					id: lesson.id,
 					lessonDate: lesson.lessonDate,
 					title: lesson.title,
+					goal: lesson.goal || '',
 					description: lesson.description,
 				}
 			},
@@ -349,6 +452,11 @@ export default {
 	},
 	async mounted() {
 		await this.loadBootstrap()
+	},
+	beforeUnmount() {
+		Object.values(this.itemAutosaveTimers).forEach((timerId) => {
+			window.clearTimeout(timerId)
+		})
 	},
 	methods: {
 		async loadBootstrap() {
@@ -426,6 +534,46 @@ export default {
 				showError('Kurs konnte nicht gespeichert werden.')
 			}
 		},
+		confirmRemoveCourse() {
+			if (!this.selectedCourse) {
+				return
+			}
+			this.confirmDialog = {
+				action: 'course',
+				title: 'Kurs löschen',
+				message: `Möchtest du den Kurs "${this.selectedCourse.name}" wirklich löschen?`,
+				itemId: this.selectedCourse.id,
+			}
+			this.confirmModalOpen = true
+		},
+		async removeCourse(courseId = this.selectedCourse?.id) {
+			if (!courseId) {
+				return
+			}
+
+			try {
+				await deleteCourse(courseId)
+				this.courses = this.courses.filter((course) => course.id !== courseId)
+				const nextCourse = this.courses[0] || null
+				this.selectedCourseId = nextCourse?.id || null
+				this.selectedLessonId = nextCourse?.lessons?.[0]?.id || null
+				showSuccess('Kurs gelöscht.')
+			} catch (error) {
+				showError('Kurs konnte nicht gelöscht werden.')
+			}
+		},
+		confirmRemoveLesson() {
+			if (!this.selectedLesson) {
+				return
+			}
+			this.confirmDialog = {
+				action: 'lesson',
+				title: 'Stunde löschen',
+				message: `Möchtest du die Stunde "${this.selectedLesson.title}" wirklich löschen?`,
+				itemId: this.selectedLesson.id,
+			}
+			this.confirmModalOpen = true
+		},
 		async submitCourseModal() {
 			if (!this.courseDraft.name.trim()) {
 				showError('Bitte einen Kursnamen eingeben.')
@@ -448,6 +596,7 @@ export default {
 				const lesson = await createLesson(this.selectedCourse.id, {
 					lessonDate: new Date().toISOString().slice(0, 10),
 					title: 'Neue Stunde',
+					goal: '',
 					description: '',
 				})
 				this.selectedCourse.lessons.push(lesson)
@@ -469,20 +618,28 @@ export default {
 				showError('Stunde konnte nicht gespeichert werden.')
 			}
 		},
-		async removeLesson() {
-			if (!this.selectedLesson || !this.selectedCourse) {
+		async removeLesson(lessonId = this.selectedLesson?.id) {
+			if (!lessonId || !this.selectedCourse) {
 				return
 			}
 
 			try {
-				const lessonId = this.selectedLesson.id
 				await deleteLesson(lessonId)
 				this.selectedCourse.lessons = this.selectedCourse.lessons.filter((lesson) => lesson.id !== lessonId)
 				this.selectedLessonId = this.selectedCourse.lessons[0]?.id || null
-				showSuccess('Stunde geloescht.')
+				showSuccess('Stunde gelöscht.')
 			} catch (error) {
-				showError('Stunde konnte nicht geloescht werden.')
+				showError('Stunde konnte nicht gelöscht werden.')
 			}
+		},
+		confirmRemoveItem(item) {
+			this.confirmDialog = {
+				action: 'item',
+				title: 'Element löschen',
+				message: `Möchtest du das Element "${item.title}" wirklich löschen?`,
+				itemId: item.id,
+			}
+			this.confirmModalOpen = true
 		},
 		async handleCreateItem() {
 			if (!this.selectedLesson) {
@@ -494,24 +651,106 @@ export default {
 					title: 'Neues Element',
 					description: '',
 					published: false,
+					isCurrent: false,
 				})
 				this.selectedLesson.items.push(item)
 			} catch (error) {
 				showError('Element konnte nicht angelegt werden.')
 			}
 		},
-		async saveItem(item) {
+		scheduleItemAutosave(item) {
+			if (!item?.id) {
+				return
+			}
+			if (this.itemAutosaveTimers[item.id]) {
+				window.clearTimeout(this.itemAutosaveTimers[item.id])
+			}
+			this.itemAutosaveTimers[item.id] = window.setTimeout(() => {
+				delete this.itemAutosaveTimers[item.id]
+				void this.saveItem(item, { silent: true })
+			}, 900)
+		},
+		async saveItem(item, options = {}) {
+			const { triggerPublish = false, silent = false } = options
+			if (item?.id && this.itemAutosaveTimers[item.id]) {
+				window.clearTimeout(this.itemAutosaveTimers[item.id])
+				delete this.itemAutosaveTimers[item.id]
+			}
 			try {
-				const updated = await updateLessonItem(item.id, item)
+				if (triggerPublish) {
+					this.publishInProgress = true
+				}
+				const updated = await updateLessonItem(item.id, {
+					...item,
+					triggerPublish,
+				})
 				this.replaceItem(updated)
-				showSuccess(updated.published ? 'Element gespeichert und publiziert.' : 'Element gespeichert.')
+				if (!silent) {
+					showSuccess(triggerPublish ? 'Element gespeichert und publiziert.' : 'Element gespeichert.')
+				}
 			} catch (error) {
-				showError('Element konnte nicht gespeichert werden.')
+				if (!silent) {
+					showError('Element konnte nicht gespeichert werden.')
+				}
+			} finally {
+				if (triggerPublish) {
+					this.publishInProgress = false
+				}
 			}
 		},
 		async toggleItemPublished(item, published) {
 			item.published = published
-			await this.saveItem(item)
+			await this.saveItem(item, { triggerPublish: true })
+		},
+		async toggleItemCurrent(item, isCurrent) {
+			const items = this.selectedLesson?.items || []
+			items.forEach((entry) => {
+				if (entry.id !== item.id && isCurrent) {
+					entry.isCurrent = false
+				}
+			})
+			item.isCurrent = isCurrent
+			await this.saveItem(item, { triggerPublish: true })
+		},
+		async removeItem(itemId) {
+			if (!this.selectedLesson || !itemId) {
+				return
+			}
+
+			try {
+				this.publishInProgress = true
+				await deleteLessonItem(itemId)
+				this.selectedLesson.items = this.selectedLesson.items.filter((entry) => entry.id !== itemId)
+				showSuccess('Element gelöscht und Publishing aktualisiert.')
+			} catch (error) {
+				showError('Element konnte nicht gelöscht werden.')
+			} finally {
+				this.publishInProgress = false
+			}
+		},
+		closeConfirmModal() {
+			this.confirmModalOpen = false
+			this.confirmDialog = {
+				action: null,
+				title: '',
+				message: '',
+				itemId: null,
+			}
+		},
+		async performConfirmedAction() {
+			const { action, itemId } = this.confirmDialog
+			this.closeConfirmModal()
+			if (action === 'course' && itemId) {
+				await this.removeCourse(itemId)
+				return
+			}
+			if (action === 'lesson' && itemId) {
+				await this.removeLesson(itemId)
+				return
+			}
+			if (action === 'item' && itemId) {
+				await this.removeItem(itemId)
+			}
 		},
 		isFirstItem(item) {
 			return this.selectedLesson?.items.findIndex((entry) => entry.id === item.id) === 0
@@ -532,21 +771,23 @@ export default {
 				return
 			}
 
-			const targetItem = items[targetIndex]
-			const currentSortOrder = item.sortOrder
-			item.sortOrder = targetItem.sortOrder
-			targetItem.sortOrder = currentSortOrder
+			const reorderedItems = [...items]
+			const [movedItem] = reorderedItems.splice(currentIndex, 1)
+			reorderedItems.splice(targetIndex, 0, movedItem)
+			const payloads = reorderedItems.map((entry, index) => ({
+				...entry,
+				sortOrder: index,
+			}))
 
 			try {
-				const [updatedCurrent, updatedTarget] = await Promise.all([
-					updateLessonItem(item.id, item),
-					updateLessonItem(targetItem.id, targetItem),
-				])
-				this.replaceItem(updatedCurrent)
-				this.replaceItem(updatedTarget)
+				const updatedItems = []
+				for (const payload of payloads) {
+					updatedItems.push(await updateLessonItem(payload.id, payload))
+				}
+				updatedItems.forEach((updatedItem) => this.replaceItem(updatedItem))
 				this.selectedLesson.items.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
 			} catch (error) {
-				showError('Reihenfolge konnte nicht geaendert werden.')
+				showError('Reihenfolge konnte nicht geändert werden.')
 			}
 		},
 		openAttachmentPicker(itemId) {
@@ -559,6 +800,7 @@ export default {
 			}
 
 			try {
+				this.publishInProgress = true
 				const attachment = await uploadAttachment(item.id, file)
 				if (!Array.isArray(item.attachments)) {
 					item.attachments = []
@@ -568,6 +810,7 @@ export default {
 			} catch (error) {
 				showError('Datei konnte nicht hochgeladen werden.')
 			} finally {
+				this.publishInProgress = false
 				event.target.value = ''
 			}
 		},
@@ -591,6 +834,7 @@ export default {
 			}
 
 			try {
+				this.publishInProgress = true
 				const response = await publishCourse(this.selectedCourse.id)
 				if (!response.ok) {
 					showError(response.message || 'Publishing fehlgeschlagen.')
@@ -601,6 +845,8 @@ export default {
 				showSuccess(`Kurs publiziert: ${response.publicUrl}`)
 			} catch (error) {
 				showError('Publishing fehlgeschlagen.')
+			} finally {
+				this.publishInProgress = false
 			}
 		},
 		upsertCourse(course) {
@@ -633,6 +879,12 @@ export default {
 				return ''
 			}
 			return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' }).format(new Date(`${value}T00:00:00`))
+		},
+		truncateText(value, maxLength) {
+			if (!value) {
+				return ''
+			}
+			return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
 		},
 		normalizeBaseUrl(value) {
 			const trimmed = value.trim()
@@ -668,9 +920,41 @@ export default {
 	gap: 1rem;
 }
 
+.publish-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 5000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: color-mix(in srgb, var(--color-main-background) 58%, transparent);
+	backdrop-filter: blur(3px);
+}
+
+.publish-overlay__card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 1.5rem 1.75rem;
+	border-radius: 14px;
+	background: var(--color-main-background);
+	box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+	text-align: center;
+}
+
+.publish-overlay__card span {
+	color: var(--color-text-maxcontrast);
+}
+
 .list-panel,
 .details-panel {
 	padding: 1rem;
+}
+
+.details-panel {
+	width: 100%;
+	max-width: none;
 }
 
 .list-panel {
@@ -680,8 +964,7 @@ export default {
 .list-panel__header,
 .details-panel__header,
 .details-panel__actions,
-.item-form__header,
-.item-form__actions,
+.item-form__toolbar,
 .dialog-actions,
 .list-panel__actions {
 	display: flex;
@@ -690,7 +973,7 @@ export default {
 
 .list-panel__header,
 .details-panel__header,
-.item-form__header {
+.item-form__toolbar {
 	align-items: flex-start;
 	justify-content: space-between;
 }
@@ -730,28 +1013,70 @@ export default {
 	gap: 0.75rem;
 }
 
-.item-form__main {
+.item-list__footer {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: 0.25rem;
+}
+
+.item-card {
+	width: 100%;
+}
+
+.item-card > div:last-child {
 	flex: 1 1 auto;
 	min-width: 0;
 	width: 100%;
 }
 
-.item-form__controls {
+.item-form__main {
+	flex: 0 1 50%;
+	min-width: 0;
+	max-width: 50%;
+}
+
+.item-form__toolbar {
+	align-items: center;
+	gap: 1rem;
+	justify-content: space-between;
+	flex-wrap: nowrap;
+}
+
+.item-form__toolbar-actions {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-end;
-	gap: 0.75rem;
+	align-items: center;
+	flex: 0 0 auto;
+	flex-wrap: nowrap;
+	gap: 0.5rem;
+	margin-left: auto;
+	white-space: nowrap;
+}
+
+.item-form__publish-toggle {
 	flex: 0 0 auto;
 }
 
-.item-form__order-buttons {
-	display: flex;
-	gap: 0.5rem;
+.item-form__current-toggle {
+	flex: 0 0 auto;
 }
 
 .item-form__textarea {
-	min-height: 24rem;
+	min-height: 32rem;
 	width: 100%;
+}
+
+.item-form__description,
+.item-form__description .textarea,
+.item-form__description .textarea__main-wrapper,
+.item-form__description .textarea__input {
+	width: 100%;
+	max-width: none;
+}
+
+.item-form__icon {
+	width: 1.15rem;
+	height: 1.15rem;
+	fill: currentColor;
 }
 
 .item-form__attachments {
@@ -779,14 +1104,33 @@ export default {
 .lesson-entry {
 	display: flex;
 	flex-direction: column;
-	gap: 0.25rem;
+	gap: 0.35rem;
+}
+
+.lesson-entry__title {
+	font-size: 1rem;
+	line-height: 1.35;
+}
+
+.lesson-entry__meta {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.8rem;
+	color: var(--color-text-maxcontrast);
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.lesson-entry__meta span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .details-panel__header--sub {
 	margin-top: 1rem;
 }
 
-.item-form__actions,
 .dialog-actions {
 	justify-content: flex-end;
 }
@@ -819,9 +1163,25 @@ export default {
 
 	.list-panel__header,
 	.details-panel__header,
-	.item-form__header,
+	.item-form__toolbar,
 	.list-panel__actions {
 		flex-direction: column;
+	}
+
+	.item-form__main {
+		max-width: 100%;
+		width: 100%;
+	}
+
+	.item-form__toolbar-actions {
+		width: 100%;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		white-space: normal;
+	}
+
+	.item-form__textarea {
+		min-height: 20rem;
 	}
 }
 </style>

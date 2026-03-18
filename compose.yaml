@@ -13,6 +13,8 @@ services:
       MYSQL_PASSWORD: nextcloud
     volumes:
       - ./docker/db:/var/lib/mysql
+    networks:
+      - schoolplanner
 
   app:
     image: nextcloud:33.0.0-apache
@@ -31,6 +33,8 @@ services:
     volumes:
       - ./docker/nextcloud/html:/var/www/html
       - ./:/var/www/html/custom_apps/schoolplanner
+    networks:
+      - schoolplanner
 
   publish-mock:
     image: node:22-alpine
@@ -41,4 +45,13 @@ services:
       - "8090:8090"
     volumes:
       - ./docker/publish-mock:/srv/publish-mock
+    networks:
+      - schoolplanner
 
+networks:
+  schoolplanner:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+        - subnet: fd42:3456:789a:1::/64

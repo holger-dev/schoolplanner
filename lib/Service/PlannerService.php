@@ -103,6 +103,7 @@ class PlannerService {
 				'course_id' => $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT),
 				'lesson_date' => $query->createNamedParameter((string)($payload['lessonDate'] ?? $now->format('Y-m-d'))),
 				'title' => $query->createNamedParameter(trim((string)($payload['title'] ?? 'Neue Stunde')) ?: 'Neue Stunde'),
+				'goal' => $query->createNamedParameter(trim((string)($payload['goal'] ?? ''))),
 				'description' => $query->createNamedParameter((string)($payload['description'] ?? '')),
 				'sort_order' => $query->createNamedParameter((int)($payload['sortOrder'] ?? 0), IQueryBuilder::PARAM_INT),
 				'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
@@ -125,6 +126,7 @@ class PlannerService {
 		$query->update('schoolplanner_lessons')
 			->set('lesson_date', $query->createNamedParameter((string)($payload['lessonDate'] ?? $lesson['lessonDate'])))
 			->set('title', $query->createNamedParameter(trim((string)($payload['title'] ?? $lesson['title'])) ?: 'Neue Stunde'))
+			->set('goal', $query->createNamedParameter(trim((string)($payload['goal'] ?? $lesson['goal']))))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? $lesson['description'])))
 			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
 			->where($query->expr()->eq('id', $query->createNamedParameter($lessonId)))
@@ -147,6 +149,36 @@ class PlannerService {
 			->executeStatement();
 	}
 
+	public function deleteCourse(string $userId, int $courseId): void {
+		$course = $this->getCourse($userId, $courseId);
+		$lessonIds = array_map(static fn (array $lesson): int => (int)$lesson['id'], $course['lessons']);
+		$itemIds = [];
+		foreach ($course['lessons'] as $lesson) {
+			foreach ($lesson['items'] as $item) {
+				$itemIds[] = (int)$item['id'];
+			}
+		}
+
+		if ($itemIds !== []) {
+			$itemQuery = $this->connection->getQueryBuilder();
+			$itemQuery->delete('schoolplanner_items')
+				->where($itemQuery->expr()->in('id', $itemQuery->createNamedParameter($itemIds, IQueryBuilder::PARAM_INT_ARRAY)))
+				->executeStatement();
+		}
+
+		if ($lessonIds !== []) {
+			$lessonQuery = $this->connection->getQueryBuilder();
+			$lessonQuery->delete('schoolplanner_lessons')
+				->where($lessonQuery->expr()->in('id', $lessonQuery->createNamedParameter($lessonIds, IQueryBuilder::PARAM_INT_ARRAY)))
+				->executeStatement();
+		}
+
+		$courseQuery = $this->connection->getQueryBuilder();
+		$courseQuery->delete('schoolplanner_courses')
+			->where($courseQuery->expr()->eq('id', $courseQuery->createNamedParameter($courseId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
+	}
+
 	/**
 	 * @param array<string, mixed> $payload
 	 * @return array<string, mixed>
@@ -165,13 +197,19 @@ class PlannerService {
 				'title' => $query->createNamedParameter(trim((string)($payload['title'] ?? 'Neues Element')) ?: 'Neues Element'),
 				'description' => $query->createNamedParameter((string)($payload['description'] ?? '')),
 				'published' => $query->createNamedParameter((int)(bool)($payload['published'] ?? false), IQueryBuilder::PARAM_INT),
+				'is_current' => $query->createNamedParameter((int)(bool)($payload['isCurrent'] ?? false), IQueryBuilder::PARAM_INT),
 				'sort_order' => $query->createNamedParameter($sortOrder, IQueryBuilder::PARAM_INT),
 				'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
 				'updated_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
 			])
 			->executeStatement();
 
-		return $this->getLessonItem((int)$this->connection->lastInsertId('*PREFIX*schoolplanner_items'), $userId);
+		$itemId = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_items');
+		if ((bool)($payload['isCurrent'] ?? false)) {
+			$this->clearCurrentFlagsForLesson((int)$lesson['id'], $itemId);
+		}
+
+		return $this->getLessonItem($itemId, $userId);
 	}
 
 	/**
@@ -187,12 +225,26 @@ class PlannerService {
 			->set('title', $query->createNamedParameter(trim((string)($payload['title'] ?? $item['title'])) ?: 'Neues Element'))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? $item['description'])))
 			->set('published', $query->createNamedParameter((int)(bool)($payload['published'] ?? $item['published']), IQueryBuilder::PARAM_INT))
+			->set('is_current', $query->createNamedParameter((int)(bool)($payload['isCurrent'] ?? $item['isCurrent']), IQueryBuilder::PARAM_INT))
 			->set('sort_order', $query->createNamedParameter((int)($payload['sortOrder'] ?? $item['sortOrder']), IQueryBuilder::PARAM_INT))
 			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
 			->where($query->expr()->eq('id', $query->createNamedParameter($itemId)))
 			->executeStatement();
 
+		if ((bool)($payload['isCurrent'] ?? $item['isCurrent'])) {
+			$this->clearCurrentFlagsForLesson((int)$item['lessonId'], $itemId);
+		}
+
 		return $this->getLessonItem($itemId, $userId);
+	}
+
+	public function deleteLessonItem(string $userId, int $itemId): void {
+		$this->getLessonItem($itemId, $userId);
+
+		$query = $this->connection->getQueryBuilder();
+		$query->delete('schoolplanner_items')
+			->where($query->expr()->eq('id', $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
 	}
 
 	/**
@@ -400,6 +452,7 @@ class PlannerService {
 			'courseId' => (int)$row['course_id'],
 			'lessonDate' => (string)$row['lesson_date'],
 			'title' => (string)$row['title'],
+			'goal' => (string)($row['goal'] ?? ''),
 			'description' => (string)($row['description'] ?? ''),
 			'items' => [],
 		];
@@ -416,6 +469,7 @@ class PlannerService {
 			'title' => (string)$row['title'],
 			'description' => (string)($row['description'] ?? ''),
 			'published' => (bool)$row['published'],
+			'isCurrent' => (bool)($row['is_current'] ?? false),
 			'sortOrder' => (int)($row['sort_order'] ?? 0),
 			'attachments' => [],
 		];
@@ -484,5 +538,14 @@ class PlannerService {
 		$row = $result->fetch();
 		$result->closeCursor();
 		return ((int)($row['max_sort_order'] ?? -1)) + 1;
+	}
+
+	private function clearCurrentFlagsForLesson(int $lessonId, int $currentItemId): void {
+		$query = $this->connection->getQueryBuilder();
+		$query->update('schoolplanner_items')
+			->set('is_current', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT))
+			->where($query->expr()->eq('lesson_id', $query->createNamedParameter($lessonId, IQueryBuilder::PARAM_INT)))
+			->andWhere($query->expr()->neq('id', $query->createNamedParameter($currentItemId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
 	}
 }

@@ -65,6 +65,26 @@ class ApiController extends Controller {
 	/**
 	 * @NoAdminRequired
 	 */
+	public function deleteCourse(int $courseId): DataResponse {
+		$userId = $this->getUserId();
+		$course = $this->plannerService->getCourse($userId, $courseId);
+		foreach ($course['lessons'] as $lesson) {
+			foreach ($lesson['items'] as $item) {
+				$this->attachmentService->deleteAttachmentsForItem($userId, (int)$item['id']);
+			}
+		}
+
+		$this->plannerService->deleteCourse($userId, $courseId);
+
+		return new DataResponse([
+			'ok' => true,
+			'courseId' => $courseId,
+		]);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
 	public function createLesson(int $courseId): DataResponse {
 		$payload = $this->getJsonBody();
 		return new DataResponse(
@@ -107,9 +127,28 @@ class ApiController extends Controller {
 	 * @NoAdminRequired
 	 */
 	public function updateLessonItem(int $itemId): DataResponse {
-		$item = $this->plannerService->updateLessonItem($this->getUserId(), $itemId, $this->getJsonBody());
-		$this->publishService->publishCourseForItem($this->getUserId(), $itemId);
+		$payload = $this->getJsonBody();
+		$item = $this->plannerService->updateLessonItem($this->getUserId(), $itemId, $payload);
+		if ((bool)($payload['triggerPublish'] ?? false) === true) {
+			$this->publishService->publishCourseForItem($this->getUserId(), $itemId);
+		}
 		return new DataResponse($item);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function deleteLessonItem(int $itemId): DataResponse {
+		$userId = $this->getUserId();
+		$courseId = $this->plannerService->getCourseIdForItem($userId, $itemId);
+		$this->attachmentService->deleteAttachmentsForItem($userId, $itemId);
+		$this->plannerService->deleteLessonItem($userId, $itemId);
+		$this->publishService->publishCourse($userId, $courseId);
+
+		return new DataResponse([
+			'ok' => true,
+			'itemId' => $itemId,
+		]);
 	}
 
 	/**
