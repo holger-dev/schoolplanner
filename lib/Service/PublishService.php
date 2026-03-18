@@ -33,8 +33,11 @@ class PublishService {
 		$settings = $this->settingsService->getSettings($userId);
 		$this->assertSettingsAreComplete($settings);
 
-		$course = $this->plannerService->getCourse($userId, $courseId);
-		$allCourses = $this->plannerService->getBootstrap($userId)['courses'];
+		$course = $this->filterLessonsForPublishing($this->plannerService->getCourse($userId, $courseId));
+		$allCourses = array_map(
+			fn (array $publishedCourse): array => $this->filterLessonsForPublishing($publishedCourse),
+			$this->plannerService->getBootstrap($userId)['courses']
+		);
 		$site = $this->buildSite($settings, $course, $allCourses);
 
 		$sftp = $this->connectSftp($settings['sftpHost'], $settings['sftpUsername'], $settings['sftpPassword']);
@@ -111,9 +114,13 @@ class PublishService {
 		$publicRoot = rtrim(trim($settings['publicBaseUrl']), '/');
 		$courseRoot = $remoteRoot . '/courses/' . $course['publishSlug'];
 		$coursePublicUrl = $publicRoot . '/courses/' . $course['publishSlug'] . '/';
+		$publishedAt = (new DateTimeImmutable())->format(DATE_ATOM);
 
 		$courseFiles = [];
 		$courseFiles['index.html'] = $this->renderCoursePage($course, $publicRoot);
+		$courseFiles['__schoolplanner_version.json'] = json_encode([
+			'updatedAt' => $publishedAt,
+		], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
 
 		foreach ($course['lessons'] as $lesson) {
 			$courseFiles['lessons/' . $this->lessonSlug($lesson) . '.html'] = $this->renderLessonPage($course, $lesson, $publicRoot);
@@ -135,6 +142,19 @@ class PublishService {
 			'rootIndex' => $rootIndex,
 			'coursePublicUrl' => $coursePublicUrl,
 		];
+	}
+
+	/**
+	 * @param array<string, mixed> $course
+	 * @return array<string, mixed>
+	 */
+	private function filterLessonsForPublishing(array $course): array {
+		$course['lessons'] = array_values(array_filter(
+			$course['lessons'] ?? [],
+			static fn (array $lesson): bool => count($lesson['items'] ?? []) > 0
+		));
+
+		return $course;
 	}
 
 	/**
@@ -250,7 +270,8 @@ class PublishService {
 			. ($lessonItems === [] ? '<p>Noch keine Stunden vorhanden.</p>' : '<div class="lesson-list-public">' . implode('', $lessonItems) . '</div>')
 			. '</aside>'
 			. '<div class="content-stage">' . $currentLessonMarkup . '</div>'
-			. '</section>'
+			. '</section>',
+			'__schoolplanner_version.json'
 		);
 	}
 
@@ -262,10 +283,13 @@ class PublishService {
 		$content = '<nav><a href="../../../index.html">Kursübersicht</a> / <a href="../index.html">' . $this->escape($course['name']) . '</a></nav>'
 			. $this->renderLessonDetail($course, $lesson, '../assets', false);
 
-		return $this->renderPage($lesson['title'] . ' - ' . $course['name'], $content);
+		return $this->renderPage($lesson['title'] . ' - ' . $course['name'], $content, '../__schoolplanner_version.json');
 	}
 
-	private function renderPage(string $title, string $content): string {
+	private function renderPage(string $title, string $content, ?string $refreshPath = null): string {
+		$refreshConfig = $refreshPath !== null
+			? '<script>window.schoolplannerRefreshPath=' . json_encode($refreshPath, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . ';</script>'
+			: '';
 		return '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
 			. '<title>' . $this->escape($title) . '</title>'
 			. '<link rel="preconnect" href="https://cdnjs.cloudflare.com">'
@@ -314,16 +338,18 @@ class PublishService {
 			. '.lesson-panel{display:none;}'
 			. '.lesson-panel--active{display:block;}'
 			. '.card{border-radius:10px;padding:22px 24px;margin:0;}'
-			. '.card--focus{background:linear-gradient(180deg,rgba(24,34,53,.98),rgba(9,15,27,.98));}'
+			. '.card--focus{background:linear-gradient(180deg,rgba(24,34,53,.98),rgba(9,15,27,.98));padding-bottom:28vh;}'
 			. '.card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem;}'
 			. '.card__header h2{font-size:1.8rem;}'
 			. '.card__link{display:inline-flex;align-items:center;gap:.4rem;font-weight:700;}'
 			. '.meta{color:var(--page-muted);font-size:.95rem;margin:0 0 .5rem;}'
 			. '.pill{display:inline-flex;align-items:center;padding:.2rem .55rem;border-radius:999px;background:rgba(34,197,94,.14);color:#8ef0b2;font-size:.78rem;font-weight:700;text-transform:uppercase;}'
 			. '.status-badge{display:inline-flex;align-items:center;margin:0 0 .55rem;padding:.22rem .58rem;border-radius:999px;background:rgba(56,189,248,.12);color:#7dd3fc;font-size:.78rem;font-weight:700;text-transform:uppercase;}'
-			. '.published-item{margin:0;padding:1rem 0 0;}'
-			. '.published-item + .published-item{border-top:1px solid var(--page-line);margin-top:1rem;}'
+			. '.published-item{margin:0;padding:1rem;border:1px solid rgba(39,53,80,.92);border-radius:8px;background:rgba(11,18,32,.62);box-shadow:inset 0 0 0 1px rgba(255,255,255,.015);}'
+			. '.published-item + .published-item{margin-top:1rem;}'
+			. '.published-item--current{border-color:rgba(56,189,248,.82);background:linear-gradient(180deg,rgba(12,26,47,.96),rgba(8,16,31,.98));box-shadow:0 0 0 2px rgba(56,189,248,.14),0 18px 36px rgba(2,8,23,.26);}'
 			. '.published-item h3{margin:.2rem 0 .6rem;font-size:1.1rem;}'
+			. '.published-item__body{border:1px solid rgba(39,53,80,.72);border-radius:7px;padding:1rem;background:rgba(7,13,24,.42);}'
 			. '.attachment-list{display:flex;flex-wrap:wrap;gap:.65rem;list-style:none;padding:0;margin:.85rem 0 0;}'
 			. '.attachment-list a{display:inline-flex;align-items:center;padding:.5rem .8rem;border-radius:999px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.22);font-weight:600;}'
 			. '.copy p,.copy li{line-height:1.7;}'
@@ -338,8 +364,9 @@ class PublishService {
 			. '.copy-button:hover{background:#16233a;}'
 			. '@media (max-width:960px){.site-shell{padding:22px 16px 40px;}.course-grid{grid-template-columns:1fr;}.course-layout{grid-template-columns:1fr;}.sidebar-card{position:static;}.card__header{flex-direction:column;}.course-card__meta{flex-direction:column;align-items:flex-start;}}'
 			. '</style></head><body><div class="site-shell">' . $content . '</div>'
+			. $refreshConfig
 			. '<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>'
-			. "<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre code').forEach(function(block){if(window.hljs){window.hljs.highlightElement(block);}var pre=block.parentElement;if(pre&&pre.parentElement&&!pre.parentElement.classList.contains('codeblock')){var wrap=document.createElement('div');wrap.className='codeblock';pre.parentElement.insertBefore(wrap,pre);wrap.appendChild(pre);var btn=document.createElement('button');btn.type='button';btn.className='copy-button';btn.textContent='Copy';btn.addEventListener('click',function(){navigator.clipboard.writeText(block.innerText).then(function(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy';},1200);});});wrap.appendChild(btn);}});var links=document.querySelectorAll('.lesson-list-item[data-lesson-panel]');var panels=document.querySelectorAll('.lesson-panel');function activate(id){if(!id)return;links.forEach(function(link){link.classList.toggle('lesson-list-item--active',link.getAttribute('data-lesson-panel')===id);});panels.forEach(function(panel){panel.classList.toggle('lesson-panel--active',panel.id===id);});}links.forEach(function(link){link.addEventListener('click',function(event){event.preventDefault();var id=link.getAttribute('data-lesson-panel');activate(id);if(history.replaceState){history.replaceState(null,'','#'+id);}else{location.hash=id;}});});var initial=location.hash?location.hash.slice(1):null;if(initial&&document.getElementById(initial)){activate(initial);}else{var active=document.querySelector('.lesson-panel--active');if(active){activate(active.id);}}var searchInput=document.getElementById('global-search');var resultBox=document.getElementById('search-results');if(searchInput&&resultBox&&Array.isArray(window.schoolplannerSearchEntries)){var entries=window.schoolplannerSearchEntries;function renderResults(matches){if(matches.length===0){resultBox.innerHTML='<div class=\"search-empty\">Keine Treffer gefunden.</div>';resultBox.hidden=false;return;}resultBox.innerHTML=matches.slice(0,12).map(function(entry){return '<div class=\"search-result\"><a href=\"'+entry.url+'\"><strong>'+entry.title+'</strong><span>'+entry.subtitle+'</span></a><span class=\"search-result__type\">'+entry.type+'</span></div>';}).join('');resultBox.hidden=false;}searchInput.addEventListener('input',function(){var value=(searchInput.value||'').trim().toLowerCase();if(value.length<3){resultBox.hidden=true;resultBox.innerHTML='';return;}var matches=entries.filter(function(entry){return typeof entry.search==='string'&&entry.search.indexOf(value)!==-1;});renderResults(matches);});}});</script>"
+			. "<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre code').forEach(function(block){if(window.hljs){window.hljs.highlightElement(block);}var pre=block.parentElement;if(pre&&pre.parentElement&&!pre.parentElement.classList.contains('codeblock')){var wrap=document.createElement('div');wrap.className='codeblock';pre.parentElement.insertBefore(wrap,pre);wrap.appendChild(pre);var btn=document.createElement('button');btn.type='button';btn.className='copy-button';btn.textContent='Copy';btn.addEventListener('click',function(){navigator.clipboard.writeText(block.innerText).then(function(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy';},1200);});});wrap.appendChild(btn);}});var links=document.querySelectorAll('.lesson-list-item[data-lesson-panel]');var panels=document.querySelectorAll('.lesson-panel');function scrollToCurrent(){var current=document.querySelector('.lesson-panel--active .published-item--current');if(current){window.setTimeout(function(){current.scrollIntoView({behavior:'smooth',block:'center'});},120);}}function activate(id){if(!id)return;links.forEach(function(link){link.classList.toggle('lesson-list-item--active',link.getAttribute('data-lesson-panel')===id);});panels.forEach(function(panel){panel.classList.toggle('lesson-panel--active',panel.id===id);});scrollToCurrent();}links.forEach(function(link){link.addEventListener('click',function(event){event.preventDefault();var id=link.getAttribute('data-lesson-panel');activate(id);if(history.replaceState){history.replaceState(null,'','#'+id);}else{location.hash=id;}});});var initial=location.hash?location.hash.slice(1):null;if(initial&&document.getElementById(initial)){activate(initial);}else{var active=document.querySelector('.lesson-panel--active');if(active){activate(active.id);}else{scrollToCurrent();}}var searchInput=document.getElementById('global-search');var resultBox=document.getElementById('search-results');if(searchInput&&resultBox&&Array.isArray(window.schoolplannerSearchEntries)){var entries=window.schoolplannerSearchEntries;function renderResults(matches){if(matches.length===0){resultBox.innerHTML='<div class=\"search-empty\">Keine Treffer gefunden.</div>';resultBox.hidden=false;return;}resultBox.innerHTML=matches.slice(0,12).map(function(entry){return '<div class=\"search-result\"><a href=\"'+entry.url+'\"><strong>'+entry.title+'</strong><span>'+entry.subtitle+'</span></a><span class=\"search-result__type\">'+entry.type+'</span></div>';}).join('');resultBox.hidden=false;}searchInput.addEventListener('input',function(){var value=(searchInput.value||'').trim().toLowerCase();if(value.length<3){resultBox.hidden=true;resultBox.innerHTML='';return;}var matches=entries.filter(function(entry){return typeof entry.search==='string'&&entry.search.indexOf(value)!==-1;});renderResults(matches);});}if(window.schoolplannerRefreshPath){var currentVersion=null;var poll=function(){fetch(window.schoolplannerRefreshPath+'?t='+Date.now(),{cache:'no-store'}).then(function(response){return response.ok?response.json():null;}).then(function(payload){if(!payload||!payload.updatedAt){return;}if(currentVersion===null){currentVersion=payload.updatedAt;return;}if(currentVersion!==payload.updatedAt){window.location.reload();}}).catch(function(){});};poll();window.setInterval(poll,4000);}});</script>"
 			. '</body></html>';
 	}
 
@@ -359,11 +386,12 @@ class PublishService {
 				return '<li><a href="' . $this->escape($url) . '" download>' . $this->escape($attachment['fileName']) . '</a></li>';
 			}, $item['attachments'] ?? []);
 
-			return '<article class="published-item">'
+			return '<article class="published-item' . ((bool)($item['isCurrent'] ?? false) ? ' published-item--current' : '') . '">'
 				. ((bool)($item['isCurrent'] ?? false) ? '<span class="status-badge">Hier sind wir</span>' : '')
 				. '<h3>' . $this->escape($item['title']) . '</h3>'
-				. '<div class="copy">' . $this->renderMarkdown($item['description']) . '</div>'
+				. '<div class="published-item__body"><div class="copy">' . $this->renderMarkdown($item['description']) . '</div>'
 				. ($attachmentLinks === [] ? '' : '<ul class="attachment-list">' . implode('', $attachmentLinks) . '</ul>')
+				. '</div>'
 				. '</article>';
 		}, $publishedItems);
 

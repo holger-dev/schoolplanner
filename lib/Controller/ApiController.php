@@ -96,6 +96,16 @@ class ApiController extends Controller {
 	/**
 	 * @NoAdminRequired
 	 */
+	public function createLessonSeries(int $courseId): DataResponse {
+		return new DataResponse(
+			$this->plannerService->createLessonSeries($this->getUserId(), $courseId, $this->getJsonBody()),
+			Http::STATUS_CREATED
+		);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
 	public function copyLesson(int $courseId): DataResponse {
 		$userId = $this->getUserId();
 		$payload = $this->getJsonBody();

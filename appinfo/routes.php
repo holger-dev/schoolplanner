@@ -10,6 +10,7 @@ return [
 		['name' => 'api#updateCourse', 'url' => '/api/courses/{courseId}', 'verb' => 'PUT'],
 		['name' => 'api#deleteCourse', 'url' => '/api/courses/{courseId}', 'verb' => 'DELETE'],
 		['name' => 'api#deleteCourse', 'url' => '/api/courses/{courseId}/delete', 'verb' => 'POST'],
+		['name' => 'api#createLessonSeries', 'url' => '/api/courses/{courseId}/lesson-series', 'verb' => 'POST'],
 		['name' => 'api#createLesson', 'url' => '/api/courses/{courseId}/lessons', 'verb' => 'POST'],
 		['name' => 'api#copyLesson', 'url' => '/api/courses/{courseId}/copy-lesson', 'verb' => 'POST'],
 		['name' => 'api#updateLesson', 'url' => '/api/lessons/{lessonId}', 'verb' => 'PUT'],

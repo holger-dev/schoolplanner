@@ -118,6 +118,35 @@ class PlannerService {
 
 	/**
 	 * @param array<string, mixed> $payload
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function createLessonSeries(string $userId, int $courseId, array $payload): array {
+		$this->assertCourseOwner($userId, $courseId);
+
+		$count = max(1, min(52, (int)($payload['count'] ?? 1)));
+		$startDate = new DateTimeImmutable((string)($payload['lessonDate'] ?? (new DateTimeImmutable())->format('Y-m-d')));
+		$slot = max(1, min(8, (int)($payload['lessonSlot'] ?? 1)));
+		$title = trim((string)($payload['title'] ?? 'Neue Stunde')) ?: 'Neue Stunde';
+		$goal = trim((string)($payload['goal'] ?? ''));
+		$description = (string)($payload['description'] ?? '');
+
+		$createdLessons = [];
+		for ($index = 0; $index < $count; $index++) {
+			$createdLessons[] = $this->createLesson($userId, $courseId, [
+				'lessonDate' => $startDate->modify('+' . $index . ' week')->format('Y-m-d'),
+				'lessonSlot' => $slot,
+				'title' => $title,
+				'goal' => $goal,
+				'description' => $description,
+				'reflection' => '',
+			]);
+		}
+
+		return $createdLessons;
+	}
+
+	/**
+	 * @param array<string, mixed> $payload
 	 * @return array<string, mixed>
 	 */
 	public function updateLesson(string $userId, int $lessonId, array $payload): array {

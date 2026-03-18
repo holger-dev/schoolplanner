@@ -30,6 +30,11 @@ export const createLesson = async (courseId, payload) => {
 	return data
 }
 
+export const createLessonSeries = async (courseId, payload) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/lesson-series`), payload, { headers: jsonHeaders })
+	return data
+}
+
 export const copyLesson = async (courseId, sourceLessonId) => {
 	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/copy-lesson`), { sourceLessonId }, { headers: jsonHeaders })
 	return data

@@ -71,6 +71,7 @@
 
 					<div class="list-panel__actions" v-if="selectedCourse">
 						<NcButton type="primary" @click="handleCreateLesson">Neue Stunde</NcButton>
+						<NcButton @click="openLessonSeriesModal">Mehrere Stunden anlegen</NcButton>
 						<NcButton @click="openCopyLessonModal">Stunde kopieren</NcButton>
 						<NcButton @click="handlePublishCourse">Makroplanung veröffentlichen</NcButton>
 						<NcButton @click="confirmRemoveCourse">Kurs löschen</NcButton>
@@ -106,6 +107,9 @@
 
 			<NcAppContentDetails>
 				<div v-if="selectedLesson" class="details-panel">
+					<div class="details-panel__modebar">
+						<NcButton @click="openLiveModeModal">Live-Modus</NcButton>
+					</div>
 					<div class="details-panel__header">
 						<div>
 							<h2>Stunde</h2>
@@ -362,6 +366,38 @@
 			</div>
 		</NcModal>
 
+		<NcModal v-if="lessonSeriesModalOpen" size="normal" name="Mehrere Stunden anlegen" @close="closeLessonSeriesModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Mehrere Stunden anlegen</h2>
+					<p>Die Stunden werden ab dem Startdatum im Wochenrhythmus angelegt und erhalten automatisch den Titel `ToDo`.</p>
+				</div>
+				<div class="details-grid">
+					<NcDateTimePickerNative
+						:model-value="lessonSeriesDraftDate"
+						label="Startdatum"
+						type="date"
+						@update:model-value="lessonSeriesDraftDate = $event" />
+					<NcTextField
+						v-model="lessonSeriesDraft.lessonSlot"
+						label="Stundenplanslot"
+						type="number"
+						min="1"
+						max="8" />
+					<NcTextField
+						v-model="lessonSeriesDraft.count"
+						label="Anzahl"
+						type="number"
+						min="1"
+						max="52" />
+				</div>
+				<div class="dialog-actions">
+					<NcButton @click="closeLessonSeriesModal">Abbrechen</NcButton>
+					<NcButton type="primary" @click="submitLessonSeries">Stunden anlegen</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
 		<NcModal v-if="blockPlannerModalOpen" size="full" name="Blockansicht" @close="closeBlockPlannerModal">
 			<div class="dialog-body block-planner-modal">
 				<div class="dialog-header block-planner-header">
@@ -401,13 +437,70 @@
 										<span v-if="entry.isEmpty" class="block-entry__warning">!</span>
 										<span v-else class="block-entry__count">{{ entry.itemCount }}</span>
 									</div>
-									<div class="block-entry__meta">{{ entry.lessonSlot }}. Std.</div>
 									<div class="block-entry__title">{{ entry.title }}</div>
 								</button>
 							</div>
 						</div>
 					</template>
 				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="liveModeModalOpen" size="large" name="Live-Modus" @close="closeLiveModeModal">
+			<div class="dialog-body live-mode-modal">
+				<div class="dialog-header">
+					<h2>Live-Modus</h2>
+					<p v-if="selectedLesson">{{ selectedLesson.title }}</p>
+				</div>
+
+				<NcEmptyContent
+					v-if="!selectedLesson || sortedLessonItems.length === 0"
+					name="Keine Elemente vorhanden"
+					description="Lege zuerst mindestens ein Element für diese Stunde an." />
+
+				<template v-else-if="!liveCurrentItem">
+					<div class="live-mode__intro">
+						<p>Mit erstem Element die Stunde starten?</p>
+					</div>
+					<div class="dialog-actions">
+						<NcButton @click="closeLiveModeModal">Schließen</NcButton>
+						<NcButton type="primary" :disabled="liveModeInProgress" @click="startLiveMode">Ja</NcButton>
+					</div>
+				</template>
+
+				<template v-else>
+					<div class="live-mode__stage">
+						<section class="live-mode__card live-mode__card--current">
+							<span class="live-mode__label">Aktuelles Element</span>
+							<h3>{{ liveCurrentItem.title }}</h3>
+							<p>{{ truncateText(stripMarkdown(liveCurrentItem.description), 180) || 'Kein Beschreibungstext.' }}</p>
+						</section>
+
+						<div class="live-mode__controls">
+							<NcButton
+								type="primary"
+								:disabled="!liveNextItem || liveModeInProgress"
+								@click="advanceLiveMode">
+								{{ liveNextItem ? 'Weiter' : 'Stunde beendet' }}
+							</NcButton>
+						</div>
+
+						<section class="live-mode__card live-mode__card--next">
+							<span class="live-mode__label">Nächstes Element</span>
+							<template v-if="liveNextItem">
+								<h3>{{ liveNextItem.title }}</h3>
+								<p>{{ truncateText(stripMarkdown(liveNextItem.description), 180) || 'Kein Beschreibungstext.' }}</p>
+							</template>
+							<template v-else>
+								<h3>Kein weiteres Element</h3>
+								<p>Das aktuelle Element ist bereits das letzte in dieser Stunde.</p>
+							</template>
+						</section>
+					</div>
+					<div class="dialog-actions">
+						<NcButton @click="closeLiveModeModal">Schließen</NcButton>
+					</div>
+				</template>
 			</div>
 		</NcModal>
 	</NcContent>
@@ -498,8 +591,19 @@ export default {
 				sourceCourse: null,
 				sourceLesson: null,
 			},
+			lessonSeriesModalOpen: false,
+			lessonSeriesDraft: {
+				lessonDate: '',
+				lessonSlot: '1',
+				count: '4',
+				title: 'Neue Stunde',
+				goal: '',
+				description: '',
+			},
 			blockPlannerModalOpen: false,
 			blockPlannerWeekStart: '',
+			liveModeModalOpen: false,
+			liveModeInProgress: false,
 			settingsDraft: {
 				sftpUsername: '',
 				sftpPassword: '',
@@ -532,6 +636,18 @@ export default {
 		selectedLesson() {
 			return this.selectedCourse?.lessons.find((lesson) => lesson.id === this.selectedLessonId) || null
 		},
+		sortedLessonItems() {
+			return [...(this.selectedLesson?.items || [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+		},
+		liveCurrentIndex() {
+			return this.sortedLessonItems.findIndex((item) => item.published && item.isCurrent)
+		},
+		liveCurrentItem() {
+			return this.liveCurrentIndex >= 0 ? this.sortedLessonItems[this.liveCurrentIndex] : null
+		},
+		liveNextItem() {
+			return this.liveCurrentIndex >= 0 ? this.sortedLessonItems[this.liveCurrentIndex + 1] || null : null
+		},
 		sortedLessons() {
 			return [...(this.selectedCourse?.lessons || [])].sort((a, b) => {
 				const dateCompare = a.lessonDate.localeCompare(b.lessonDate)
@@ -550,6 +666,16 @@ export default {
 			},
 			set(value) {
 				this.lessonDraft.lessonDate = value instanceof Date
+					? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+					: ''
+			},
+		},
+		lessonSeriesDraftDate: {
+			get() {
+				return this.lessonSeriesDraft.lessonDate ? new Date(`${this.lessonSeriesDraft.lessonDate}T00:00:00`) : null
+			},
+			set(value) {
+				this.lessonSeriesDraft.lessonDate = value instanceof Date
 					? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 					: ''
 			},
@@ -706,8 +832,22 @@ export default {
 			}
 			this.copyLessonModalOpen = true
 		},
+		openLessonSeriesModal() {
+			this.lessonSeriesDraft = {
+				lessonDate: new Date().toISOString().slice(0, 10),
+				lessonSlot: '1',
+				count: '4',
+				title: 'ToDo',
+				goal: '',
+				description: '',
+			}
+			this.lessonSeriesModalOpen = true
+		},
 		openBlockPlannerModal() {
 			this.blockPlannerModalOpen = true
+		},
+		openLiveModeModal() {
+			this.liveModeModalOpen = true
 		},
 		closeCourseModal() {
 			this.courseModalOpen = false
@@ -719,8 +859,14 @@ export default {
 				sourceLesson: null,
 			}
 		},
+		closeLessonSeriesModal() {
+			this.lessonSeriesModalOpen = false
+		},
 		closeBlockPlannerModal() {
 			this.blockPlannerModalOpen = false
+		},
+		closeLiveModeModal() {
+			this.liveModeModalOpen = false
 		},
 		async renameCourse(course, name) {
 			try {
@@ -840,6 +986,42 @@ export default {
 				showSuccess('Stunde kopiert.')
 			} catch (error) {
 				showError('Stunde konnte nicht kopiert werden.')
+			}
+		},
+		async submitLessonSeries() {
+			if (!this.selectedCourse) {
+				return
+			}
+
+			try {
+				const count = Math.max(1, Math.min(52, Number.parseInt(this.lessonSeriesDraft.count, 10) || 1))
+				const slot = this.normalizeLessonSlot(this.lessonSeriesDraft.lessonSlot)
+				const startDate = this.lessonSeriesDraft.lessonDate || this.toDateKey(new Date())
+				const lessons = []
+
+				for (let index = 0; index < count; index += 1) {
+					const lesson = await createLesson(this.selectedCourse.id, {
+						lessonDate: this.addWeeksToDateKey(startDate, index),
+						lessonSlot: slot,
+						title: 'ToDo',
+						goal: '',
+						description: '',
+						reflection: '',
+					})
+					lessons.push(lesson)
+				}
+
+				this.selectedCourse.lessons.push(...lessons)
+				if (lessons[0]?.lessonDate) {
+					this.blockPlannerWeekStart = this.toDateKey(this.startOfWeek(new Date(`${lessons[0].lessonDate}T00:00:00`)))
+				}
+				if (lessons[0]) {
+					this.selectLesson(lessons[0].id)
+				}
+				this.closeLessonSeriesModal()
+				showSuccess(`${lessons.length} Stunden angelegt.`)
+			} catch (error) {
+				showError('Serienstunden konnten nicht angelegt werden.')
 			}
 		},
 		async saveLesson() {
@@ -977,6 +1159,71 @@ export default {
 			})
 			item.isCurrent = isCurrent
 			await this.saveItem(item)
+		},
+		clearItemAutosaveTimer(itemId) {
+			if (this.itemAutosaveTimers[itemId]) {
+				window.clearTimeout(this.itemAutosaveTimers[itemId])
+				delete this.itemAutosaveTimers[itemId]
+			}
+		},
+		async persistItemsAndPublish(items, successMessage) {
+			if (!this.selectedCourse) {
+				return
+			}
+
+			try {
+				const currentLessonId = this.selectedLesson?.id || null
+				this.publishInProgress = true
+				this.liveModeInProgress = true
+				for (const item of items) {
+					this.clearItemAutosaveTimer(item.id)
+					const updated = await updateLessonItem(item.id, {
+						...item,
+						triggerPublish: false,
+					})
+					this.replaceItem(updated)
+				}
+				const response = await publishCourse(this.selectedCourse.id)
+				if (!response.ok) {
+					throw new Error(response.message || 'Publishing fehlgeschlagen.')
+				}
+				this.upsertCourse(response.course)
+				if (currentLessonId) {
+					this.selectLesson(currentLessonId)
+				}
+				showSuccess(successMessage)
+			} catch (error) {
+				showError('Live-Modus konnte nicht aktualisiert werden.')
+			} finally {
+				this.publishInProgress = false
+				this.liveModeInProgress = false
+			}
+		},
+		async startLiveMode() {
+			if (!this.selectedLesson || this.sortedLessonItems.length === 0) {
+				return
+			}
+
+			const firstItemId = this.sortedLessonItems[0].id
+			const items = this.sortedLessonItems.map((entry) => ({
+				...entry,
+				published: entry.id === firstItemId,
+				isCurrent: entry.id === firstItemId,
+			}))
+			await this.persistItemsAndPublish(items, 'Live-Modus gestartet.')
+		},
+		async advanceLiveMode() {
+			if (!this.liveCurrentItem || !this.liveNextItem) {
+				return
+			}
+
+			const nextItemId = this.liveNextItem.id
+			const items = this.sortedLessonItems.map((entry) => ({
+				...entry,
+				published: entry.published || entry.id === nextItemId,
+				isCurrent: entry.id === nextItemId,
+			}))
+			await this.persistItemsAndPublish(items, 'Nächstes Element veröffentlicht.')
 		},
 		async removeItem(itemId) {
 			if (!this.selectedLesson || !itemId) {
@@ -1167,6 +1414,12 @@ export default {
 		toDateKey(date) {
 			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 		},
+		addWeeksToDateKey(dateKey, weeks) {
+			const [year, month, day] = dateKey.split('-').map((value) => Number.parseInt(value, 10))
+			const current = new Date(year, (month || 1) - 1, day || 1)
+			current.setDate(current.getDate() + (weeks * 7))
+			return this.toDateKey(current)
+		},
 		jumpToCurrentBlockWeek() {
 			this.blockPlannerWeekStart = this.toDateKey(this.startOfWeek(new Date()))
 		},
@@ -1200,6 +1453,16 @@ export default {
 				return ''
 			}
 			return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value
+		},
+		stripMarkdown(value) {
+			return (value || '')
+				.replace(/```[\s\S]*?```/g, ' ')
+				.replace(/`([^`]+)`/g, '$1')
+				.replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+				.replace(/\[[^\]]+]\([^)]*\)/g, '$1')
+				.replace(/[#>*_~-]/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
 		},
 		normalizeBaseUrl(value) {
 			const trimmed = value.trim()
@@ -1457,6 +1720,10 @@ export default {
 	margin: 0;
 }
 
+.details-panel__modebar {
+	margin-bottom: 0.85rem;
+}
+
 .details-panel__header--sub {
 	margin-top: 1rem;
 }
@@ -1488,6 +1755,60 @@ export default {
 
 .block-planner-modal {
 	gap: 1.25rem;
+}
+
+.live-mode-modal {
+	gap: 1.25rem;
+}
+
+.live-mode__intro {
+	padding-top: 0.75rem;
+}
+
+.live-mode__intro p {
+	margin: 0;
+	font-size: 1.05rem;
+}
+
+.live-mode__stage {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	gap: 1rem;
+	align-items: stretch;
+}
+
+.live-mode__card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	min-height: 16rem;
+	padding: 1rem 1.1rem;
+	border: 1px solid var(--color-border-dark);
+	border-radius: 14px;
+	background: var(--color-main-background);
+}
+
+.live-mode__card--current {
+	border-color: var(--color-primary-element);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-element) 18%, transparent);
+}
+
+.live-mode__card h3,
+.live-mode__card p {
+	margin: 0;
+}
+
+.live-mode__label {
+	font-size: 0.8rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--color-text-maxcontrast);
+}
+
+.live-mode__controls {
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
 .block-planner-header {
@@ -1581,13 +1902,19 @@ export default {
 }
 
 .block-entry__warning {
-	background: color-mix(in srgb, var(--color-warning) 18%, transparent);
-	color: var(--color-warning-text, var(--color-warning));
+	min-width: 1.9rem;
+	height: 1.9rem;
+	background: #ffd43b;
+	color: #3d2f00;
+	border: 1px solid #f0b100;
+	box-shadow: 0 0 0 2px color-mix(in srgb, #ffd43b 28%, transparent);
+	font-size: 1rem;
 }
 
 .block-entry__count {
-	background: var(--color-primary-element-light);
-	color: var(--color-primary-element-text);
+	background: color-mix(in srgb, var(--color-primary-element) 18%, var(--color-main-background));
+	color: var(--color-main-text);
+	border: 1px solid color-mix(in srgb, var(--color-primary-element) 40%, var(--color-border-dark));
 }
 
 @media (max-width: 1024px) {
@@ -1619,6 +1946,10 @@ export default {
 	}
 
 	.block-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.live-mode__stage {
 		grid-template-columns: 1fr;
 	}
 }
