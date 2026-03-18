@@ -10,6 +10,7 @@
 
 		<NcAppNavigation aria-label="Kurse">
 			<template #list>
+				<NcButton class="nav-action-button" wide @click="openBlockPlannerModal">Blockansicht</NcButton>
 				<NcAppNavigationNew text="Kurs anlegen" @click="openCreateCourseModal" />
 
 				<NcAppNavigationItem
@@ -92,6 +93,7 @@
 									<div class="lesson-entry">
 										<div class="lesson-entry__meta">
 											<span>{{ formatDate(lesson.lessonDate) }}</span>
+											<span>{{ lesson.lessonSlot }}. Std.</span>
 											<span>{{ truncateText(lesson.goal || 'Noch kein Ziel', 30) }}</span>
 										</div>
 									</div>
@@ -121,6 +123,12 @@
 							label="Datum"
 							type="date"
 							@update:model-value="lessonDraftDate = $event" />
+						<NcTextField
+							v-model="lessonDraft.lessonSlot"
+							label="Stundenplanslot"
+							type="number"
+							min="1"
+							max="8" />
 						<NcTextField
 							v-model="lessonDraft.title"
 							label="Thema"
@@ -353,6 +361,55 @@
 				</div>
 			</div>
 		</NcModal>
+
+		<NcModal v-if="blockPlannerModalOpen" size="full" name="Blockansicht" @close="closeBlockPlannerModal">
+			<div class="dialog-body block-planner-modal">
+				<div class="dialog-header block-planner-header">
+					<div>
+						<h2>Blockansicht</h2>
+						<p>{{ blockPlannerWeekLabel }}</p>
+					</div>
+					<div class="dialog-actions">
+						<NcButton @click="shiftBlockPlannerWeek(-1)">Zurück</NcButton>
+						<NcButton @click="jumpToCurrentBlockWeek">Aktuelle Woche</NcButton>
+						<NcButton @click="shiftBlockPlannerWeek(1)">Vor</NcButton>
+					</div>
+				</div>
+
+				<div class="block-grid">
+					<div class="block-grid__corner">Stunde</div>
+					<div v-for="day in blockPlannerDays" :key="day.key" class="block-grid__day">
+						<strong>{{ day.label }}</strong>
+						<span>{{ day.dateLabel }}</span>
+					</div>
+
+					<template v-for="row in blockPlannerRows" :key="`slot-${row.slot}`">
+						<div class="block-grid__slot">{{ row.slot }}. Std.</div>
+						<div
+							v-for="day in row.days"
+							:key="`${row.slot}-${day.key}`"
+							class="block-grid__cell">
+							<div v-if="day.entries.length" class="block-grid__entries">
+								<button
+									v-for="entry in day.entries"
+									:key="entry.lessonId"
+									class="block-entry"
+									type="button"
+									@click="openLessonFromBlockPlanner(entry.courseId, entry.lessonId)">
+									<div class="block-entry__top">
+										<strong>{{ entry.courseName }}</strong>
+										<span v-if="entry.isEmpty" class="block-entry__warning">!</span>
+										<span v-else class="block-entry__count">{{ entry.itemCount }}</span>
+									</div>
+									<div class="block-entry__meta">{{ entry.lessonSlot }}. Std.</div>
+									<div class="block-entry__title">{{ entry.title }}</div>
+								</button>
+							</div>
+						</div>
+					</template>
+				</div>
+			</div>
+		</NcModal>
 	</NcContent>
 </template>
 
@@ -441,6 +498,8 @@ export default {
 				sourceCourse: null,
 				sourceLesson: null,
 			},
+			blockPlannerModalOpen: false,
+			blockPlannerWeekStart: '',
 			settingsDraft: {
 				sftpUsername: '',
 				sftpPassword: '',
@@ -452,6 +511,7 @@ export default {
 			lessonDraft: {
 				id: null,
 				lessonDate: '',
+				lessonSlot: '1',
 				title: '',
 				goal: '',
 				description: '',
@@ -473,7 +533,13 @@ export default {
 			return this.selectedCourse?.lessons.find((lesson) => lesson.id === this.selectedLessonId) || null
 		},
 		sortedLessons() {
-			return [...(this.selectedCourse?.lessons || [])].sort((a, b) => a.lessonDate.localeCompare(b.lessonDate))
+			return [...(this.selectedCourse?.lessons || [])].sort((a, b) => {
+				const dateCompare = a.lessonDate.localeCompare(b.lessonDate)
+				if (dateCompare !== 0) {
+					return dateCompare
+				}
+				return (a.lessonSlot || 1) - (b.lessonSlot || 1)
+			})
 		},
 		courseModalTitle() {
 			return this.courseDraft.id ? 'Kurs bearbeiten' : 'Kurs anlegen'
@@ -511,9 +577,42 @@ export default {
 			const sourceCourseId = this.copyLessonDraft.sourceCourse?.value
 			const sourceCourse = this.courses.find((course) => course.id === sourceCourseId)
 			return (sourceCourse?.lessons || []).map((lesson) => ({
-				label: `${this.formatDate(lesson.lessonDate)} · ${lesson.title}`,
+				label: `${this.formatDate(lesson.lessonDate)} · ${lesson.lessonSlot || 1}. Std. · ${lesson.title}`,
 				value: lesson.id,
 			}))
+		},
+		blockPlannerDays() {
+			const start = this.blockPlannerWeekStartDate
+			return Array.from({ length: 5 }, (_, index) => {
+				const current = new Date(start)
+				current.setDate(start.getDate() + index)
+				return {
+					key: this.toDateKey(current),
+					label: ['Mo', 'Di', 'Mi', 'Do', 'Fr'][index],
+					dateLabel: this.formatDateKey(this.toDateKey(current)),
+				}
+			})
+		},
+		blockPlannerWeekStartDate() {
+			return this.blockPlannerWeekStart ? new Date(`${this.blockPlannerWeekStart}T00:00:00`) : this.startOfWeek(new Date())
+		},
+		blockPlannerWeekLabel() {
+			const start = this.blockPlannerWeekStartDate
+			const end = new Date(start)
+			end.setDate(start.getDate() + 4)
+			return `${this.formatDateKey(this.toDateKey(start))} bis ${this.formatDateKey(this.toDateKey(end))}`
+		},
+		blockPlannerRows() {
+			return Array.from({ length: 8 }, (_, index) => {
+				const slot = index + 1
+				return {
+					slot,
+					days: this.blockPlannerDays.map((day) => ({
+						...day,
+						entries: this.getBlockPlannerEntries(day.key, slot),
+					})),
+				}
+			})
 		},
 	},
 	watch: {
@@ -531,13 +630,14 @@ export default {
 					this.lessonReflectionAutosaveTimer = null
 				}
 				if (!lesson) {
-					this.lessonDraft = { id: null, lessonDate: '', title: '', goal: '', description: '', reflection: '' }
+					this.lessonDraft = { id: null, lessonDate: '', lessonSlot: '1', title: '', goal: '', description: '', reflection: '' }
 					return
 				}
 
 				this.lessonDraft = {
 					id: lesson.id,
 					lessonDate: lesson.lessonDate,
+					lessonSlot: String(lesson.lessonSlot || 1),
 					title: lesson.title,
 					goal: lesson.goal || '',
 					description: lesson.description,
@@ -569,6 +669,7 @@ export default {
 			if (this.courses[0]) {
 				this.selectCourse(this.courses[0].id)
 			}
+			this.jumpToCurrentBlockWeek()
 		},
 		selectCourse(courseId) {
 			this.selectedCourseId = courseId
@@ -605,6 +706,9 @@ export default {
 			}
 			this.copyLessonModalOpen = true
 		},
+		openBlockPlannerModal() {
+			this.blockPlannerModalOpen = true
+		},
 		closeCourseModal() {
 			this.courseModalOpen = false
 		},
@@ -614,6 +718,9 @@ export default {
 				sourceCourse: null,
 				sourceLesson: null,
 			}
+		},
+		closeBlockPlannerModal() {
+			this.blockPlannerModalOpen = false
 		},
 		async renameCourse(course, name) {
 			try {
@@ -708,6 +815,7 @@ export default {
 			try {
 				const lesson = await createLesson(this.selectedCourse.id, {
 					lessonDate: new Date().toISOString().slice(0, 10),
+					lessonSlot: 1,
 					title: 'Neue Stunde',
 					goal: '',
 					description: '',
@@ -745,7 +853,10 @@ export default {
 			}
 
 			try {
-				const lesson = await updateLesson(this.lessonDraft.id, this.lessonDraft)
+				const lesson = await updateLesson(this.lessonDraft.id, {
+					...this.lessonDraft,
+					lessonSlot: this.normalizeLessonSlot(this.lessonDraft.lessonSlot),
+				})
 				this.replaceLesson(lesson)
 				showSuccess('Stunde gespeichert.')
 			} catch (error) {
@@ -762,7 +873,10 @@ export default {
 			this.lessonReflectionAutosaveTimer = window.setTimeout(async () => {
 				this.lessonReflectionAutosaveTimer = null
 				try {
-					const lesson = await updateLesson(this.lessonDraft.id, this.lessonDraft)
+					const lesson = await updateLesson(this.lessonDraft.id, {
+						...this.lessonDraft,
+						lessonSlot: this.normalizeLessonSlot(this.lessonDraft.lessonSlot),
+					})
 					this.replaceLesson(lesson)
 				} catch (error) {
 					// Keep autosave quiet; the explicit save button still surfaces errors.
@@ -1032,6 +1146,55 @@ export default {
 			}
 			return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' }).format(new Date(`${value}T00:00:00`))
 		},
+		formatDateKey(value) {
+			return this.formatDate(value)
+		},
+		normalizeLessonSlot(value) {
+			const numeric = Number.parseInt(value, 10)
+			if (Number.isNaN(numeric)) {
+				return 1
+			}
+			return Math.min(8, Math.max(1, numeric))
+		},
+		startOfWeek(date) {
+			const current = new Date(date)
+			const day = current.getDay()
+			const diff = day === 0 ? -6 : 1 - day
+			current.setHours(0, 0, 0, 0)
+			current.setDate(current.getDate() + diff)
+			return current
+		},
+		toDateKey(date) {
+			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+		},
+		jumpToCurrentBlockWeek() {
+			this.blockPlannerWeekStart = this.toDateKey(this.startOfWeek(new Date()))
+		},
+		shiftBlockPlannerWeek(direction) {
+			const start = new Date(`${this.blockPlannerWeekStart}T00:00:00`)
+			start.setDate(start.getDate() + direction * 7)
+			this.blockPlannerWeekStart = this.toDateKey(start)
+		},
+		getBlockPlannerEntries(dateKey, slot) {
+			return this.courses.flatMap((course) =>
+				(course.lessons || [])
+					.filter((lesson) => lesson.lessonDate === dateKey && (lesson.lessonSlot || 1) === slot)
+					.map((lesson) => ({
+						courseId: course.id,
+						courseName: course.name,
+						lessonId: lesson.id,
+						lessonSlot: lesson.lessonSlot || 1,
+						title: lesson.title,
+						itemCount: lesson.items?.length || 0,
+						isEmpty: (lesson.items?.length || 0) === 0,
+					}))
+			)
+		},
+		openLessonFromBlockPlanner(courseId, lessonId) {
+			this.selectCourse(courseId)
+			this.selectLesson(lessonId)
+			this.closeBlockPlannerModal()
+		},
 		truncateText(value, maxLength) {
 			if (!value) {
 				return ''
@@ -1097,6 +1260,11 @@ export default {
 
 .publish-overlay__card span {
 	color: var(--color-text-maxcontrast);
+}
+
+.nav-action-button {
+	width: 100%;
+	margin-bottom: 0.75rem;
 }
 
 .list-panel,
@@ -1279,6 +1447,16 @@ export default {
 	text-overflow: ellipsis;
 }
 
+.lesson-reflection-preview {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.lesson-reflection-preview p {
+	margin: 0;
+}
+
 .details-panel__header--sub {
 	margin-top: 1rem;
 }
@@ -1308,6 +1486,110 @@ export default {
 	padding-top: 0.5rem;
 }
 
+.block-planner-modal {
+	gap: 1.25rem;
+}
+
+.block-planner-header {
+	align-items: flex-start;
+}
+
+.block-grid {
+	display: grid;
+	grid-template-columns: 96px repeat(5, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+.block-grid__corner,
+.block-grid__day,
+.block-grid__slot,
+.block-grid__cell {
+	border: 1px solid var(--color-border);
+	border-radius: 12px;
+	padding: 0.75rem;
+	background: var(--color-main-background);
+}
+
+.block-grid__corner,
+.block-grid__slot {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 700;
+}
+
+.block-grid__day {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.block-grid__day span {
+	color: var(--color-text-maxcontrast);
+	font-size: 0.9rem;
+}
+
+.block-grid__cell {
+	min-height: 8rem;
+}
+
+.block-grid__entries {
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+}
+
+.block-entry {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	width: 100%;
+	padding: 0.75rem;
+	border: 1px solid var(--color-border-dark);
+	border-radius: 10px;
+	background: var(--color-background-hover);
+	text-align: left;
+	cursor: pointer;
+}
+
+.block-entry__top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+.block-entry__meta {
+	font-size: 0.82rem;
+	color: var(--color-text-maxcontrast);
+}
+
+.block-entry__title {
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.block-entry__warning,
+.block-entry__count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.5rem;
+	height: 1.5rem;
+	border-radius: 999px;
+	font-weight: 700;
+}
+
+.block-entry__warning {
+	background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+	color: var(--color-warning-text, var(--color-warning));
+}
+
+.block-entry__count {
+	background: var(--color-primary-element-light);
+	color: var(--color-primary-element-text);
+}
+
 @media (max-width: 1024px) {
 	.details-grid {
 		grid-template-columns: 1fr;
@@ -1334,6 +1616,10 @@ export default {
 
 	.item-form__textarea {
 		min-height: 16rem;
+	}
+
+	.block-grid {
+		grid-template-columns: 1fr;
 	}
 }
 </style>

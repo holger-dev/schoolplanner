@@ -102,6 +102,7 @@ class PlannerService {
 			->values([
 				'course_id' => $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT),
 				'lesson_date' => $query->createNamedParameter((string)($payload['lessonDate'] ?? $now->format('Y-m-d'))),
+				'lesson_slot' => $query->createNamedParameter(max(1, min(8, (int)($payload['lessonSlot'] ?? 1))), IQueryBuilder::PARAM_INT),
 				'title' => $query->createNamedParameter(trim((string)($payload['title'] ?? 'Neue Stunde')) ?: 'Neue Stunde'),
 				'goal' => $query->createNamedParameter(trim((string)($payload['goal'] ?? ''))),
 				'description' => $query->createNamedParameter((string)($payload['description'] ?? '')),
@@ -126,6 +127,7 @@ class PlannerService {
 		$query = $this->connection->getQueryBuilder();
 		$query->update('schoolplanner_lessons')
 			->set('lesson_date', $query->createNamedParameter((string)($payload['lessonDate'] ?? $lesson['lessonDate'])))
+			->set('lesson_slot', $query->createNamedParameter(max(1, min(8, (int)($payload['lessonSlot'] ?? $lesson['lessonSlot']))), IQueryBuilder::PARAM_INT))
 			->set('title', $query->createNamedParameter(trim((string)($payload['title'] ?? $lesson['title'])) ?: 'Neue Stunde'))
 			->set('goal', $query->createNamedParameter(trim((string)($payload['goal'] ?? $lesson['goal']))))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? $lesson['description'])))
@@ -194,6 +196,7 @@ class PlannerService {
 			->values([
 				'course_id' => $lessonQuery->createNamedParameter($targetCourseId, IQueryBuilder::PARAM_INT),
 				'lesson_date' => $lessonQuery->createNamedParameter((string)$sourceLesson['lessonDate']),
+				'lesson_slot' => $lessonQuery->createNamedParameter((int)($sourceLesson['lessonSlot'] ?? 1), IQueryBuilder::PARAM_INT),
 				'title' => $lessonQuery->createNamedParameter((string)$sourceLesson['title']),
 				'goal' => $lessonQuery->createNamedParameter((string)($sourceLesson['goal'] ?? '')),
 				'description' => $lessonQuery->createNamedParameter((string)($sourceLesson['description'] ?? '')),
@@ -506,6 +509,7 @@ class PlannerService {
 			'id' => (int)$row['id'],
 			'courseId' => (int)$row['course_id'],
 			'lessonDate' => (string)$row['lesson_date'],
+			'lessonSlot' => (int)($row['lesson_slot'] ?? 1),
 			'title' => (string)$row['title'],
 			'goal' => (string)($row['goal'] ?? ''),
 			'description' => (string)($row['description'] ?? ''),
