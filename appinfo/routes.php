@@ -11,6 +11,7 @@ return [
 		['name' => 'api#deleteCourse', 'url' => '/api/courses/{courseId}', 'verb' => 'DELETE'],
 		['name' => 'api#deleteCourse', 'url' => '/api/courses/{courseId}/delete', 'verb' => 'POST'],
 		['name' => 'api#createLesson', 'url' => '/api/courses/{courseId}/lessons', 'verb' => 'POST'],
+		['name' => 'api#copyLesson', 'url' => '/api/courses/{courseId}/copy-lesson', 'verb' => 'POST'],
 		['name' => 'api#updateLesson', 'url' => '/api/lessons/{lessonId}', 'verb' => 'PUT'],
 		['name' => 'api#deleteLesson', 'url' => '/api/lessons/{lessonId}', 'verb' => 'DELETE'],
 		['name' => 'api#deleteLesson', 'url' => '/api/lessons/{lessonId}/delete', 'verb' => 'POST'],

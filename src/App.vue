@@ -70,6 +70,7 @@
 
 					<div class="list-panel__actions" v-if="selectedCourse">
 						<NcButton type="primary" @click="handleCreateLesson">Neue Stunde</NcButton>
+						<NcButton @click="openCopyLessonModal">Stunde kopieren</NcButton>
 						<NcButton @click="handlePublishCourse">Makroplanung veröffentlichen</NcButton>
 						<NcButton @click="confirmRemoveCourse">Kurs löschen</NcButton>
 					</div>
@@ -244,6 +245,11 @@
 									resize="vertical"
 									@update:model-value="scheduleItemAutosave(item)" />
 
+								<NcTextField
+									v-model="item.teacherNote"
+									label="Hinweise für Lehrer:in"
+									@update:model-value="scheduleItemAutosave(item)" />
+
 								<div class="item-form__attachments">
 									<div class="item-form__attachments-header">
 										<strong>Dateien</strong>
@@ -319,6 +325,34 @@
 				</div>
 			</div>
 		</NcModal>
+
+		<NcModal v-if="copyLessonModalOpen" size="normal" name="Stunde kopieren" @close="closeCopyLessonModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Stunde kopieren</h2>
+					<p>Wähle zuerst einen Kurs und dann die Stunde, die in den aktuell ausgewählten Kurs kopiert werden soll.</p>
+				</div>
+				<NcSelect
+					v-model="copyLessonDraft.sourceCourse"
+					:options="copySourceCourseOptions"
+					input-label="Quellkurs"
+					label="label"
+					track-by="value"
+					placeholder="Kurs auswählen" />
+				<NcSelect
+					v-model="copyLessonDraft.sourceLesson"
+					:options="copySourceLessonOptions"
+					input-label="Quellstunde"
+					label="label"
+					track-by="value"
+					placeholder="Stunde auswählen"
+					:disabled="copySourceLessonOptions.length === 0" />
+				<div class="dialog-actions">
+					<NcButton @click="closeCopyLessonModal">Abbrechen</NcButton>
+					<NcButton type="primary" :disabled="!copyLessonDraft.sourceLesson" @click="submitCopyLesson">Stunde kopieren</NcButton>
+				</div>
+			</div>
+		</NcModal>
 	</NcContent>
 </template>
 
@@ -341,10 +375,12 @@ import {
 	NcLoadingIcon,
 	NcModal,
 	NcNoteCard,
+	NcSelect,
 	NcTextArea,
 	NcTextField,
 } from '@nextcloud/vue'
 import {
+	copyLesson,
 	createCourse,
 	createLesson,
 	createLessonItem,
@@ -378,6 +414,7 @@ export default {
 		NcLoadingIcon,
 		NcModal,
 		NcNoteCard,
+		NcSelect,
 		NcTextArea,
 		NcTextField,
 	},
@@ -398,6 +435,11 @@ export default {
 				title: '',
 				message: '',
 				itemId: null,
+			},
+			copyLessonModalOpen: false,
+			copyLessonDraft: {
+				sourceCourse: null,
+				sourceLesson: null,
 			},
 			settingsDraft: {
 				sftpUsername: '',
@@ -457,8 +499,30 @@ export default {
 			}
 			return lessons[currentIndex - 1]?.reflection || ''
 		},
+		copySourceCourseOptions() {
+			return this.courses
+				.filter((course) => (course.lessons || []).length > 0)
+				.map((course) => ({
+					label: course.name,
+					value: course.id,
+				}))
+		},
+		copySourceLessonOptions() {
+			const sourceCourseId = this.copyLessonDraft.sourceCourse?.value
+			const sourceCourse = this.courses.find((course) => course.id === sourceCourseId)
+			return (sourceCourse?.lessons || []).map((lesson) => ({
+				label: `${this.formatDate(lesson.lessonDate)} · ${lesson.title}`,
+				value: lesson.id,
+			}))
+		},
 	},
 	watch: {
+		'copyLessonDraft.sourceCourse'(course) {
+			const lessonExists = this.copySourceLessonOptions.some((lesson) => lesson.value === this.copyLessonDraft.sourceLesson?.value)
+			if (!course || !lessonExists) {
+				this.copyLessonDraft.sourceLesson = null
+			}
+		},
 		selectedLesson: {
 			immediate: true,
 			handler(lesson) {
@@ -534,8 +598,22 @@ export default {
 			}
 			this.courseModalOpen = true
 		},
+		openCopyLessonModal() {
+			this.copyLessonDraft = {
+				sourceCourse: this.copySourceCourseOptions[0] || null,
+				sourceLesson: null,
+			}
+			this.copyLessonModalOpen = true
+		},
 		closeCourseModal() {
 			this.courseModalOpen = false
+		},
+		closeCopyLessonModal() {
+			this.copyLessonModalOpen = false
+			this.copyLessonDraft = {
+				sourceCourse: null,
+				sourceLesson: null,
+			}
 		},
 		async renameCourse(course, name) {
 			try {
@@ -641,6 +719,21 @@ export default {
 				showError('Stunde konnte nicht angelegt werden.')
 			}
 		},
+		async submitCopyLesson() {
+			if (!this.selectedCourse || !this.copyLessonDraft.sourceLesson?.value) {
+				return
+			}
+
+			try {
+				const lesson = await copyLesson(this.selectedCourse.id, this.copyLessonDraft.sourceLesson.value)
+				this.selectedCourse.lessons.push(lesson)
+				this.selectLesson(lesson.id)
+				this.closeCopyLessonModal()
+				showSuccess('Stunde kopiert.')
+			} catch (error) {
+				showError('Stunde konnte nicht kopiert werden.')
+			}
+		},
 		async saveLesson() {
 			if (!this.lessonDraft.id) {
 				return
@@ -708,6 +801,7 @@ export default {
 				const item = await createLessonItem(this.selectedLesson.id, {
 					title: 'Neues Element',
 					description: '',
+					teacherNote: '',
 					published: false,
 					isCurrent: false,
 				})
@@ -1119,7 +1213,7 @@ export default {
 }
 
 .item-form__textarea {
-	min-height: 32rem;
+	min-height: 24rem;
 	width: 100%;
 }
 
@@ -1239,7 +1333,7 @@ export default {
 	}
 
 	.item-form__textarea {
-		min-height: 20rem;
+		min-height: 16rem;
 	}
 }
 </style>

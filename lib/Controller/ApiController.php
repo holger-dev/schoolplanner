@@ -96,6 +96,28 @@ class ApiController extends Controller {
 	/**
 	 * @NoAdminRequired
 	 */
+	public function copyLesson(int $courseId): DataResponse {
+		$userId = $this->getUserId();
+		$payload = $this->getJsonBody();
+		$sourceLessonId = (int)($payload['sourceLessonId'] ?? 0);
+		if ($sourceLessonId <= 0) {
+			throw new \InvalidArgumentException('sourceLessonId fehlt.');
+		}
+
+		$result = $this->plannerService->duplicateLessonToCourse($userId, $courseId, $sourceLessonId);
+		foreach ($result['itemMap'] as $sourceItemId => $targetItemId) {
+			$this->attachmentService->duplicateAttachmentsBetweenItems((int)$sourceItemId, (int)$targetItemId);
+		}
+
+		return new DataResponse(
+			$this->plannerService->getLesson((int)$result['lesson']['id'], $userId),
+			Http::STATUS_CREATED
+		);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
 	public function updateLesson(int $lessonId): DataResponse {
 		return new DataResponse(
 			$this->plannerService->updateLesson($this->getUserId(), $lessonId, $this->getJsonBody())

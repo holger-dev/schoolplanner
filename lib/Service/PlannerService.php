@@ -182,6 +182,57 @@ class PlannerService {
 	}
 
 	/**
+	 * @return array{lesson: array<string, mixed>, itemMap: array<int, int>}
+	 */
+	public function duplicateLessonToCourse(string $userId, int $targetCourseId, int $sourceLessonId): array {
+		$this->assertCourseOwner($userId, $targetCourseId);
+		$sourceLesson = $this->getLesson($sourceLessonId, $userId);
+		$now = new DateTimeImmutable();
+
+		$lessonQuery = $this->connection->getQueryBuilder();
+		$lessonQuery->insert('schoolplanner_lessons')
+			->values([
+				'course_id' => $lessonQuery->createNamedParameter($targetCourseId, IQueryBuilder::PARAM_INT),
+				'lesson_date' => $lessonQuery->createNamedParameter((string)$sourceLesson['lessonDate']),
+				'title' => $lessonQuery->createNamedParameter((string)$sourceLesson['title']),
+				'goal' => $lessonQuery->createNamedParameter((string)($sourceLesson['goal'] ?? '')),
+				'description' => $lessonQuery->createNamedParameter((string)($sourceLesson['description'] ?? '')),
+				'reflection' => $lessonQuery->createNamedParameter((string)($sourceLesson['reflection'] ?? '')),
+				'sort_order' => $lessonQuery->createNamedParameter(0, IQueryBuilder::PARAM_INT),
+				'created_at' => $lessonQuery->createNamedParameter($now->format('Y-m-d H:i:s')),
+				'updated_at' => $lessonQuery->createNamedParameter($now->format('Y-m-d H:i:s')),
+			])
+			->executeStatement();
+
+		$newLessonId = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_lessons');
+		$itemMap = [];
+
+		foreach ($sourceLesson['items'] as $item) {
+			$itemQuery = $this->connection->getQueryBuilder();
+			$itemQuery->insert('schoolplanner_items')
+				->values([
+					'lesson_id' => $itemQuery->createNamedParameter($newLessonId, IQueryBuilder::PARAM_INT),
+					'title' => $itemQuery->createNamedParameter((string)$item['title']),
+					'description' => $itemQuery->createNamedParameter((string)($item['description'] ?? '')),
+					'teacher_note' => $itemQuery->createNamedParameter((string)($item['teacherNote'] ?? '')),
+					'published' => $itemQuery->createNamedParameter((int)(bool)($item['published'] ?? false), IQueryBuilder::PARAM_INT),
+					'is_current' => $itemQuery->createNamedParameter((int)(bool)($item['isCurrent'] ?? false), IQueryBuilder::PARAM_INT),
+					'sort_order' => $itemQuery->createNamedParameter((int)($item['sortOrder'] ?? 0), IQueryBuilder::PARAM_INT),
+					'created_at' => $itemQuery->createNamedParameter($now->format('Y-m-d H:i:s')),
+					'updated_at' => $itemQuery->createNamedParameter($now->format('Y-m-d H:i:s')),
+				])
+				->executeStatement();
+
+			$itemMap[(int)$item['id']] = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_items');
+		}
+
+		return [
+			'lesson' => $this->getLesson($newLessonId, $userId),
+			'itemMap' => $itemMap,
+		];
+	}
+
+	/**
 	 * @param array<string, mixed> $payload
 	 * @return array<string, mixed>
 	 */
@@ -198,6 +249,7 @@ class PlannerService {
 				'lesson_id' => $query->createNamedParameter($lesson['id'], IQueryBuilder::PARAM_INT),
 				'title' => $query->createNamedParameter(trim((string)($payload['title'] ?? 'Neues Element')) ?: 'Neues Element'),
 				'description' => $query->createNamedParameter((string)($payload['description'] ?? '')),
+				'teacher_note' => $query->createNamedParameter(trim((string)($payload['teacherNote'] ?? ''))),
 				'published' => $query->createNamedParameter((int)(bool)($payload['published'] ?? false), IQueryBuilder::PARAM_INT),
 				'is_current' => $query->createNamedParameter((int)(bool)($payload['isCurrent'] ?? false), IQueryBuilder::PARAM_INT),
 				'sort_order' => $query->createNamedParameter($sortOrder, IQueryBuilder::PARAM_INT),
@@ -226,6 +278,7 @@ class PlannerService {
 		$query->update('schoolplanner_items')
 			->set('title', $query->createNamedParameter(trim((string)($payload['title'] ?? $item['title'])) ?: 'Neues Element'))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? $item['description'])))
+			->set('teacher_note', $query->createNamedParameter(trim((string)($payload['teacherNote'] ?? $item['teacherNote']))))
 			->set('published', $query->createNamedParameter((int)(bool)($payload['published'] ?? $item['published']), IQueryBuilder::PARAM_INT))
 			->set('is_current', $query->createNamedParameter((int)(bool)($payload['isCurrent'] ?? $item['isCurrent']), IQueryBuilder::PARAM_INT))
 			->set('sort_order', $query->createNamedParameter((int)($payload['sortOrder'] ?? $item['sortOrder']), IQueryBuilder::PARAM_INT))
@@ -471,6 +524,7 @@ class PlannerService {
 			'lessonId' => (int)$row['lesson_id'],
 			'title' => (string)$row['title'],
 			'description' => (string)($row['description'] ?? ''),
+			'teacherNote' => (string)($row['teacher_note'] ?? ''),
 			'published' => (bool)$row['published'],
 			'isCurrent' => (bool)($row['is_current'] ?? false),
 			'sortOrder' => (int)($row['sort_order'] ?? 0),

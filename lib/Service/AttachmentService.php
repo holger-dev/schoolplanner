@@ -132,6 +132,34 @@ class AttachmentService {
 			->executeStatement();
 	}
 
+	public function duplicateAttachmentsBetweenItems(int $sourceItemId, int $targetItemId): void {
+		$attachments = $this->getAttachmentsForItem($sourceItemId);
+		if ($attachments === []) {
+			return;
+		}
+
+		$targetFolder = $this->getItemFolder($targetItemId, true);
+		$now = new DateTimeImmutable();
+
+		foreach ($attachments as $attachment) {
+			$originalName = $this->sanitizeOriginalName((string)$attachment['fileName']);
+			$storedName = uniqid('attachment_', true) . '-' . $originalName;
+			$targetFolder->newFile($storedName, $this->readAttachmentContent($attachment));
+
+			$query = $this->connection->getQueryBuilder();
+			$query->insert('schoolplanner_attachments')
+				->values([
+					'item_id' => $query->createNamedParameter($targetItemId, IQueryBuilder::PARAM_INT),
+					'file_name' => $query->createNamedParameter($originalName),
+					'stored_name' => $query->createNamedParameter($storedName),
+					'mime_type' => $query->createNamedParameter((string)($attachment['mimeType'] ?? 'application/octet-stream')),
+					'size' => $query->createNamedParameter((int)($attachment['size'] ?? 0)),
+					'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
+				])
+				->executeStatement();
+		}
+	}
+
 	private function getItemFolder(int $itemId, bool $createIfMissing) {
 		$appData = $this->appDataFactory->get(Application::APP_ID);
 		$baseFolder = $this->getOrCreateFolder($appData, 'attachments', $createIfMissing);
