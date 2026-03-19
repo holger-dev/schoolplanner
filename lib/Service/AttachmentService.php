@@ -160,6 +160,38 @@ class AttachmentService {
 		}
 	}
 
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function createAttachmentFromContent(int $itemId, string $originalName, string $content, string $mimeType = 'application/octet-stream'): array {
+		$storedOriginalName = $this->sanitizeOriginalName($originalName);
+		$storedName = uniqid('attachment_', true) . '-' . $storedOriginalName;
+		$folder = $this->getItemFolder($itemId, true);
+		$folder->newFile($storedName, $content);
+
+		$now = new DateTimeImmutable();
+		$query = $this->connection->getQueryBuilder();
+		$query->insert('schoolplanner_attachments')
+			->values([
+				'item_id' => $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT),
+				'file_name' => $query->createNamedParameter($storedOriginalName),
+				'stored_name' => $query->createNamedParameter($storedName),
+				'mime_type' => $query->createNamedParameter($mimeType),
+				'size' => $query->createNamedParameter(strlen($content), IQueryBuilder::PARAM_INT),
+				'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
+			])
+			->executeStatement();
+
+		$attachmentId = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_attachments');
+		foreach ($this->getAttachmentsForItem($itemId) as $attachment) {
+			if ((int)$attachment['id'] === $attachmentId) {
+				return $attachment;
+			}
+		}
+
+		throw new \RuntimeException('Attachment konnte nicht importiert werden.');
+	}
+
 	private function getItemFolder(int $itemId, bool $createIfMissing) {
 		$appData = $this->appDataFactory->get(Application::APP_ID);
 		$baseFolder = $this->getOrCreateFolder($appData, 'attachments', $createIfMissing);

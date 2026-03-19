@@ -22,6 +22,9 @@ return [
 		['name' => 'api#deleteLessonItem', 'url' => '/api/items/{itemId}/delete', 'verb' => 'POST'],
 		['name' => 'api#uploadAttachment', 'url' => '/api/items/{itemId}/attachments', 'verb' => 'POST'],
 		['name' => 'api#saveSettings', 'url' => '/api/settings', 'verb' => 'PUT'],
+		['name' => 'api#exportData', 'url' => '/api/export', 'verb' => 'GET'],
+		['name' => 'api#exportData', 'url' => '/api/export', 'verb' => 'POST'],
+		['name' => 'api#importData', 'url' => '/api/import', 'verb' => 'POST'],
 		['name' => 'api#publishCourse', 'url' => '/api/courses/{courseId}/publish', 'verb' => 'POST'],
 	],
 ];

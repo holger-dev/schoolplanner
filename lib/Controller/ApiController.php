@@ -6,11 +6,13 @@ namespace OCA\SchoolPlanner\Controller;
 
 use OCA\SchoolPlanner\AppInfo\Application;
 use OCA\SchoolPlanner\Service\AttachmentService;
+use OCA\SchoolPlanner\Service\ImportExportService;
 use OCA\SchoolPlanner\Service\PlannerService;
 use OCA\SchoolPlanner\Service\PublishService;
 use OCA\SchoolPlanner\Service\SettingsService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
+use OCP\AppFramework\Http\DataDownloadResponse;
 use OCP\IRequest;
 use OCP\IUserSession;
 use OCP\AppFramework\Http;
@@ -23,6 +25,7 @@ class ApiController extends Controller {
 		private AttachmentService $attachmentService,
 		private SettingsService $settingsService,
 		private PublishService $publishService,
+		private ImportExportService $importExportService,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -203,6 +206,33 @@ class ApiController extends Controller {
 		return new DataResponse(
 			$this->settingsService->saveSettings($this->getUserId(), $this->getJsonBody())
 		);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function exportData(): DataDownloadResponse {
+		$payload = $this->getJsonBody();
+		$courseIds = array_values(array_filter(array_map(
+			static fn ($value): int => (int)$value,
+			is_array($payload['courseIds'] ?? null) ? $payload['courseIds'] : []
+		), static fn (int $value): bool => $value > 0));
+		$archive = $this->importExportService->exportArchive($this->getUserId(), $courseIds);
+		return new DataDownloadResponse($archive['content'], $archive['fileName'], 'application/zip');
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function importData(): DataResponse {
+		$result = $this->importExportService->importArchive(
+			$this->getUserId(),
+			$this->request->getUploadedFile('file')
+		);
+		return new DataResponse([
+			'ok' => true,
+			'coursesImported' => $result['coursesImported'],
+		], Http::STATUS_CREATED);
 	}
 
 	/**

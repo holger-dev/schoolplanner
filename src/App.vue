@@ -27,7 +27,7 @@
 			</template>
 
 			<template #footer>
-				<NcAppNavigationSettings name="Publishing-Einstellungen">
+				<NcAppNavigationSettings name="Einstellungen">
 					<div class="settings-panel">
 						<NcTextField
 							v-model="settingsDraft.publicBaseUrl"
@@ -43,6 +43,17 @@
 							type="password"
 							placeholder="Passwort" />
 						<NcButton type="primary" @click="persistSettings">Speichern</NcButton>
+						<div class="settings-panel__divider" />
+						<div class="settings-panel__actions">
+							<input
+								id="planner-import-input"
+								class="item-form__file-input"
+								type="file"
+								accept=".zip,application/zip"
+								@change="handleImportSelected">
+							<NcButton @click="triggerImportPicker">Import</NcButton>
+							<NcButton @click="openExportModal">Export</NcButton>
+						</div>
 					</div>
 				</NcAppNavigationSettings>
 			</template>
@@ -503,6 +514,29 @@
 				</template>
 			</div>
 		</NcModal>
+
+		<NcModal v-if="exportModalOpen" size="normal" name="Export" @close="closeExportModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Export</h2>
+					<p>Wähle die Kurse aus, die exportiert werden sollen.</p>
+				</div>
+				<div class="export-course-list">
+					<NcCheckboxRadioSwitch
+						v-for="course in courses"
+						:key="course.id"
+						:model-value="exportCourseIds.includes(course.id)"
+						type="checkbox"
+						@update:model-value="toggleExportCourse(course.id, $event)">
+						{{ course.name }}
+					</NcCheckboxRadioSwitch>
+				</div>
+				<div class="dialog-actions">
+					<NcButton @click="closeExportModal">Abbrechen</NcButton>
+					<NcButton type="primary" :disabled="exportCourseIds.length === 0" @click="handleExport">Exportieren</NcButton>
+				</div>
+			</div>
+		</NcModal>
 	</NcContent>
 </template>
 
@@ -537,7 +571,9 @@ import {
 	deleteCourse,
 	deleteLesson,
 	deleteLessonItem,
+	exportPlannerData,
 	fetchBootstrap,
+	importPlannerData,
 	publishCourse,
 	saveSettings,
 	uploadAttachment,
@@ -604,6 +640,8 @@ export default {
 			blockPlannerWeekStart: '',
 			liveModeModalOpen: false,
 			liveModeInProgress: false,
+			exportModalOpen: false,
+			exportCourseIds: [],
 			settingsDraft: {
 				sftpUsername: '',
 				sftpPassword: '',
@@ -849,6 +887,10 @@ export default {
 		openLiveModeModal() {
 			this.liveModeModalOpen = true
 		},
+		openExportModal() {
+			this.exportCourseIds = this.courses.map((course) => course.id)
+			this.exportModalOpen = true
+		},
 		closeCourseModal() {
 			this.courseModalOpen = false
 		},
@@ -867,6 +909,9 @@ export default {
 		},
 		closeLiveModeModal() {
 			this.liveModeModalOpen = false
+		},
+		closeExportModal() {
+			this.exportModalOpen = false
 		},
 		async renameCourse(course, name) {
 			try {
@@ -1341,6 +1386,50 @@ export default {
 				showError('Einstellungen konnten nicht gespeichert werden.')
 			}
 		},
+		triggerImportPicker() {
+			document.getElementById('planner-import-input')?.click()
+		},
+		toggleExportCourse(courseId, selected) {
+			if (selected) {
+				if (!this.exportCourseIds.includes(courseId)) {
+					this.exportCourseIds.push(courseId)
+				}
+				return
+			}
+			this.exportCourseIds = this.exportCourseIds.filter((id) => id !== courseId)
+		},
+		async handleImportSelected(event) {
+			const file = event?.target?.files?.[0]
+			if (!file) {
+				return
+			}
+
+			try {
+				const result = await importPlannerData(file)
+				await this.loadBootstrap()
+				showSuccess(`${result.coursesImported || 0} Kurse importiert.`)
+			} catch (error) {
+				showError('Import fehlgeschlagen.')
+			} finally {
+				event.target.value = ''
+			}
+		},
+		async handleExport() {
+			try {
+				const { blob, fileName } = await exportPlannerData(this.exportCourseIds)
+				const downloadUrl = window.URL.createObjectURL(blob)
+				const link = document.createElement('a')
+				link.href = downloadUrl
+				link.download = fileName
+				document.body.appendChild(link)
+				link.click()
+				document.body.removeChild(link)
+				window.URL.revokeObjectURL(downloadUrl)
+				this.closeExportModal()
+			} catch (error) {
+				showError('Export fehlgeschlagen.')
+			}
+		},
 		async handlePublishCourse() {
 			if (!this.selectedCourse) {
 				return
@@ -1722,6 +1811,25 @@ export default {
 
 .details-panel__modebar {
 	margin-bottom: 0.85rem;
+}
+
+.settings-panel__divider {
+	width: 100%;
+	height: 1px;
+	background: var(--color-border);
+}
+
+.settings-panel__actions {
+	display: flex;
+	gap: 0.75rem;
+	flex-wrap: wrap;
+}
+
+.export-course-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	padding-top: 0.25rem;
 }
 
 .details-panel__header--sub {

@@ -77,6 +77,24 @@ export const saveSettings = async (payload) => {
 	return data
 }
 
+export const exportPlannerData = async (courseIds = []) => {
+	const response = await axios.post(generateUrl('/apps/schoolplanner/api/export'), { courseIds }, {
+		headers: jsonHeaders,
+		responseType: 'blob',
+	})
+	return {
+		blob: response.data,
+		fileName: response.headers['content-disposition']?.match(/filename="?([^"]+)"?/)?.[1] || 'schoolplanner-export.zip',
+	}
+}
+
+export const importPlannerData = async (file) => {
+	const formData = new FormData()
+	formData.append('file', file)
+	const { data } = await axios.post(generateUrl('/apps/schoolplanner/api/import'), formData)
+	return data
+}
+
 export const publishCourse = async (courseId) => {
 	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/publish`))
 	return data
