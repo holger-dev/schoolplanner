@@ -176,6 +176,8 @@ npm run watch
 
 The repository now contains a GitHub Actions workflow at [.github/workflows/release.yml](.github/workflows/release.yml) for automated Nextcloud releases.
 
+The workflow only runs when a GitHub release is published. It does not run on normal pushes.
+
 The workflow does the following when a GitHub release is published:
 
 - installs PHP and Node.js dependencies

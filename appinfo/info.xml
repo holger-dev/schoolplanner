@@ -5,7 +5,7 @@
 	<name>School Planner</name>
 	<summary>Lesson planning tool for teachers with publish workflow</summary>
 	<description>Plan courses, lessons and lesson flow elements inside Nextcloud and publish selected content to an external web server.</description>
-	<version>0.1.0</version>
+	<version>1.0.0</version>
 	<licence>agpl</licence>
 	<author mail="dev@example.invalid">Codex</author>
 	<namespace>SchoolPlanner</namespace>

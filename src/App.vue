@@ -19,6 +19,7 @@
 		<NcAppNavigation aria-label="Kurse">
 			<template #list>
 				<NcButton class="nav-action-button" wide @click="openBlockPlannerModal">Blockansicht</NcButton>
+				<NcButton class="nav-action-button" wide @click="handlePublishAllCourses">Planung veröffentlichen</NcButton>
 				<NcAppNavigationNew text="Kurs anlegen" @click="openCreateCourseModal" />
 
 				<NcAppNavigationItem
@@ -1498,14 +1499,48 @@ export default {
 				this.publishInProgress = false
 			}
 		},
-		upsertCourse(course) {
+		async handlePublishAllCourses() {
+			if (this.courses.length === 0) {
+				return
+			}
+
+			const previousCourseId = this.selectedCourseId
+			const previousLessonId = this.selectedLessonId
+			let publishedCount = 0
+
+			try {
+				this.publishInProgress = true
+				for (const course of this.courses) {
+					const response = await publishCourse(course.id)
+					if (response?.ok) {
+						this.upsertCourse(response.course, { selectCourse: false })
+						publishedCount += 1
+					}
+				}
+				if (previousCourseId) {
+					this.selectedCourseId = previousCourseId
+				}
+				if (previousLessonId) {
+					this.selectedLessonId = previousLessonId
+				}
+				showSuccess(`${publishedCount} Kurse publiziert.`)
+			} catch (error) {
+				showError('Gesamte Planung konnte nicht veröffentlicht werden.')
+			} finally {
+				this.publishInProgress = false
+			}
+		},
+		upsertCourse(course, options = {}) {
+			const { selectCourse = true } = options
 			const index = this.courses.findIndex((entry) => entry.id === course.id)
 			if (index === -1) {
 				this.courses.push(course)
 			} else {
 				this.courses.splice(index, 1, course)
 			}
-			this.selectCourse(course.id)
+			if (selectCourse) {
+				this.selectCourse(course.id)
+			}
 		},
 		replaceLesson(lesson) {
 			const index = this.selectedCourse.lessons.findIndex((entry) => entry.id === lesson.id)
