@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, zip
+          tools: composer
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Set up Nextcloud app packaging
+        uses: nextcloud/actions/setup-nextcloud-app@master
+        with:
+          app_name: schoolplanner
+          stable_version: "33"
+          php_version: "8.3"
+
+      - name: Package app
+        working-directory: ../server/apps/schoolplanner
+        env:
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+          app_public_crt: ${{ secrets.APP_PUBLIC_CERT }}
+        run: make appstore
+
+      - name: Upload release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ../server/apps/schoolplanner/build/artifacts/appstore/schoolplanner.tar.gz
+
+      - name: Publish to Nextcloud App Store
+        if: ${{ secrets.APPSTORE_TOKEN != '' }}
+        uses: R0Wi/nextcloud-appstore-push-action@v1
+        with:
+          app_id: schoolplanner
+          appstore_token: ${{ secrets.APPSTORE_TOKEN }}
+          download_url: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/schoolplanner.tar.gz
+          release_notes: ${{ github.event.release.body }}
+          nightly: ${{ github.event.release.prerelease }}

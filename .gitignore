@@ -8,6 +8,7 @@ css/
 vendor/
 .env
 .env.local
+build/
 
 # Nextcloud runtime and app data
 .nextcloud/
@@ -20,4 +21,3 @@ docker/db/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-

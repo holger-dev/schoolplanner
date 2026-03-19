@@ -1,5 +1,13 @@
 <template>
 	<NcContent app-name="schoolplanner">
+		<div v-if="uploadState.active" class="publish-overlay" aria-live="polite" aria-busy="true">
+			<div class="publish-overlay__card publish-overlay__card--upload">
+				<strong>Datei wird hochgeladen…</strong>
+				<span>{{ uploadState.fileName || 'Anhang' }}</span>
+				<NcProgressBar :value="uploadState.progress" :size="8" show-value />
+			</div>
+		</div>
+
 		<div v-if="publishInProgress" class="publish-overlay" aria-live="polite" aria-busy="true">
 			<div class="publish-overlay__card">
 				<NcLoadingIcon :size="48" />
@@ -170,7 +178,7 @@
 					<div class="details-panel__header details-panel__header--sub">
 						<div>
 							<h2>Stundenablauf</h2>
-							<p>Elemente können einzeln veröffentlicht werden.</p>
+							<p>{{ selectedLesson ? `${formatDate(selectedLesson.lessonDate)} · ${selectedLesson.title}` : 'Elemente können einzeln veröffentlicht werden.' }}</p>
 						</div>
 						<NcButton @click="handleCreateItem">Element anlegen</NcButton>
 					</div>
@@ -559,6 +567,7 @@ import {
 	NcLoadingIcon,
 	NcModal,
 	NcNoteCard,
+	NcProgressBar,
 	NcSelect,
 	NcTextArea,
 	NcTextField,
@@ -600,6 +609,7 @@ export default {
 		NcLoadingIcon,
 		NcModal,
 		NcNoteCard,
+		NcProgressBar,
 		NcSelect,
 		NcTextArea,
 		NcTextField,
@@ -648,6 +658,11 @@ export default {
 				publicBaseUrl: '',
 			},
 			publishInProgress: false,
+			uploadState: {
+				active: false,
+				fileName: '',
+				progress: 0,
+			},
 			itemAutosaveTimers: {},
 			lessonReflectionAutosaveTimer: null,
 			lessonDraft: {
@@ -837,7 +852,25 @@ export default {
 		},
 		selectCourse(courseId) {
 			this.selectedCourseId = courseId
-			this.selectedLessonId = this.courses.find((course) => course.id === courseId)?.lessons[0]?.id || null
+			this.selectedLessonId = this.getPreferredLessonIdForCourse(
+				this.courses.find((course) => course.id === courseId) || null
+			)
+		},
+		getPreferredLessonIdForCourse(course) {
+			const lessons = [...(course?.lessons || [])].sort((a, b) => {
+				const dateCompare = a.lessonDate.localeCompare(b.lessonDate)
+				if (dateCompare !== 0) {
+					return dateCompare
+				}
+				return (a.lessonSlot || 1) - (b.lessonSlot || 1)
+			})
+			if (lessons.length === 0) {
+				return null
+			}
+
+			const today = this.toDateKey(new Date())
+			const nextLesson = lessons.find((lesson) => lesson.lessonDate >= today)
+			return (nextLesson || lessons[lessons.length - 1])?.id || null
 		},
 		selectLesson(lessonId) {
 			this.selectedLessonId = lessonId
@@ -1358,8 +1391,18 @@ export default {
 			}
 
 			try {
-				this.publishInProgress = true
-				const attachment = await uploadAttachment(item.id, file)
+				this.uploadState = {
+					active: true,
+					fileName: file.name,
+					progress: 0,
+				}
+				const attachment = await uploadAttachment(item.id, file, (progressEvent) => {
+					const total = Number(progressEvent?.total || 0)
+					const loaded = Number(progressEvent?.loaded || 0)
+					if (total > 0) {
+						this.uploadState.progress = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)))
+					}
+				})
 				if (!Array.isArray(item.attachments)) {
 					item.attachments = []
 				}
@@ -1368,7 +1411,11 @@ export default {
 			} catch (error) {
 				showError('Datei konnte nicht hochgeladen werden.')
 			} finally {
-				this.publishInProgress = false
+				this.uploadState = {
+					active: false,
+					fileName: '',
+					progress: 0,
+				}
 				event.target.value = ''
 			}
 		},

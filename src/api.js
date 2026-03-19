@@ -65,10 +65,12 @@ export const deleteLessonItem = async (itemId) => {
 	return data
 }
 
-export const uploadAttachment = async (itemId, file) => {
+export const uploadAttachment = async (itemId, file, onUploadProgress) => {
 	const formData = new FormData()
 	formData.append('file', file)
-	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/items/${itemId}/attachments`), formData)
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/items/${itemId}/attachments`), formData, {
+		onUploadProgress,
+	})
 	return data
 }
 
