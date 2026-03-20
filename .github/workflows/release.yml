@@ -1,4 +1,4 @@
-name: Release
+name: Build and publish Nextcloud app release
 
 on:
   release:
@@ -8,63 +8,143 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_NAME: schoolplanner
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  release:
+  build_and_publish:
+    environment: release
     runs-on: ubuntu-latest
-    env:
-      APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    strategy:
+      matrix:
+        php-versions: ['8.3']
+        nextcloud: ['stable33']
+        database: ['sqlite']
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-          extensions: mbstring, intl, zip
-          tools: composer
-
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
-          cache: npm
-
-      - name: Install PHP dependencies
-        run: composer install --no-dev --prefer-dist --no-interaction
-
-      - name: Install Node.js dependencies
-        run: npm ci
+          node-version: '24'
+          cache: 'npm'
 
       - name: Build frontend
-        run: npm run build
+        run: |
+          npm ci
+          npm run build
 
-      - name: Set up Nextcloud app packaging
-        uses: SMillerDev/nextcloud-actions/setup-nextcloud-app@fae87e29aa7cdf1ea0b8033c67f60e75b10be2cd
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
-          app: schoolplanner
-          check-code: false
+          php-version: ${{ matrix.php-versions }}
+          extensions: pdo_sqlite,pdo_mysql,pdo_pgsql,gd,zip
+          coverage: none
 
-      - name: Package app
-        working-directory: ${{ github.workspace }}/nextcloud/apps/schoolplanner
-        env:
-          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-          app_public_crt: ${{ secrets.APP_PUBLIC_CERT }}
-        run: make appstore
-
-      - name: Upload release artifact
-        uses: softprops/action-gh-release@v2
+      - name: Set up Nextcloud server
+        uses: SMillerDev/nextcloud-actions/setup-nextcloud@fae87e29aa7cdf1ea0b8033c67f60e75b10be2cd
         with:
-          files: ${{ github.workspace }}/nextcloud/apps/schoolplanner/build/artifacts/appstore/schoolplanner.tar.gz
+          cron: false
+          version: ${{ matrix.nextcloud }}
+          database-type: ${{ matrix.database }}
 
-      - name: Publish to Nextcloud App Store
-        if: ${{ env.APPSTORE_TOKEN != '' }}
+      - name: Prepare release app workspace
+        run: |
+          mkdir -p ../release-app/${{ env.APP_NAME }}
+          rsync -a --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "node_modules" \
+            --exclude "build" \
+            --exclude ".nextcloud" \
+            --exclude "docker" \
+            --exclude "images" \
+            --exclude ".idea" \
+            --exclude ".vscode" \
+            --exclude ".DS_Store" \
+            --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            ./ \
+            ../release-app/${{ env.APP_NAME }}/
+
+      - name: Install PHP dependencies
+        run: |
+          cd ../release-app/${{ env.APP_NAME }}
+          if [ -f composer.json ]; then
+            composer install --no-dev --prefer-dist --optimize-autoloader
+          fi
+
+      - name: Write certificate and key from secrets
+        run: |
+          mkdir -p ~/.nextcloud/certificates
+          printf "%s" "${{ secrets.APP_PRIVATE_KEY }}" > ~/.nextcloud/certificates/${{ env.APP_NAME }}.key
+          printf "%s" "${{ secrets.APP_PUBLIC_CRT }}" > ~/.nextcloud/certificates/${{ env.APP_NAME }}.crt
+          sed -i 's/\r$//' ~/.nextcloud/certificates/${{ env.APP_NAME }}.key
+          sed -i 's/\r$//' ~/.nextcloud/certificates/${{ env.APP_NAME }}.crt
+          chmod 600 ~/.nextcloud/certificates/${{ env.APP_NAME }}.key
+          chmod 644 ~/.nextcloud/certificates/${{ env.APP_NAME }}.crt
+
+      - name: Validate app signing key and certificate
+        run: |
+          KEY=~/.nextcloud/certificates/${{ env.APP_NAME }}.key
+          CRT=~/.nextcloud/certificates/${{ env.APP_NAME }}.crt
+
+          if [ ! -s "$KEY" ]; then
+            echo "Missing or empty secret: APP_PRIVATE_KEY"
+            exit 1
+          fi
+          if [ ! -s "$CRT" ]; then
+            echo "Missing or empty secret: APP_PUBLIC_CRT"
+            exit 1
+          fi
+          if ! grep -q "BEGIN .*PRIVATE KEY" "$KEY"; then
+            echo "APP_PRIVATE_KEY does not look like a PEM private key."
+            exit 1
+          fi
+          if ! grep -q "BEGIN CERTIFICATE" "$CRT"; then
+            echo "APP_PUBLIC_CRT does not look like a PEM certificate."
+            exit 1
+          fi
+
+          openssl pkey -in "$KEY" -noout >/dev/null
+          openssl x509 -in "$CRT" -noout >/dev/null
+
+          KEY_FP="$(openssl pkey -in "$KEY" -pubout -outform PEM | openssl dgst -sha256 | sed 's/^.*= //')"
+          CRT_FP="$(openssl x509 -in "$CRT" -pubkey -noout | openssl pkey -pubin -outform PEM | openssl dgst -sha256 | sed 's/^.*= //')"
+          if [ "$KEY_FP" != "$CRT_FP" ]; then
+            echo "Private key and certificate do not match."
+            exit 1
+          fi
+
+      - name: Create signed release archive
+        run: |
+          cd ../release-app/${{ env.APP_NAME }}
+          chmod -R u+rwX .
+          mkdir -p appinfo
+          make appstore APP_NAME=${{ env.APP_NAME }} OCC="${{ github.workspace }}/../server/occ"
+
+      - name: Upload app tarball to GitHub release
+        uses: svenstaro/upload-release-action@v2
+        id: attach_to_release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ../release-app/${{ env.APP_NAME }}/build/artifacts/appstore/${{ env.APP_NAME }}.tar.gz
+          asset_name: ${{ env.APP_NAME }}.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+
+      - name: Upload app to Nextcloud App Store
+        if: ${{ secrets.APPSTORE_TOKEN != '' }}
         uses: R0Wi/nextcloud-appstore-push-action@v1
         with:
-          app_id: schoolplanner
-          appstore_token: ${{ env.APPSTORE_TOKEN }}
-          download_url: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/schoolplanner.tar.gz
-          release_notes: ${{ github.event.release.body }}
+          app_name: ${{ env.APP_NAME }}
+          appstore_token: ${{ secrets.APPSTORE_TOKEN }}
+          download_url: ${{ steps.attach_to_release.outputs.browser_download_url }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
           nightly: ${{ github.event.release.prerelease }}
+
+      - name: Cleanup local cert and key
+        run: rm -f ~/.nextcloud/certificates/*

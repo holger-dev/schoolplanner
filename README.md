@@ -190,7 +190,7 @@ The workflow does the following when a GitHub release is published:
 Required GitHub secrets:
 
 - `APP_PRIVATE_KEY`: the Nextcloud app private key PEM
-- `APP_PUBLIC_CERT`: the public certificate PEM
+- `APP_PUBLIC_CRT`: the public certificate PEM
 - `APPSTORE_TOKEN`: App Store API token for automated publishing
 
 Notes:
