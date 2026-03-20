@@ -41,11 +41,10 @@ jobs:
         run: npm run build
 
       - name: Set up Nextcloud app packaging
-        uses: nextcloud/actions/setup-nextcloud-app@master
+        uses: SMillerDev/nextcloud-actions/setup-nextcloud-app@fae87e29aa7cdf1ea0b8033c67f60e75b10be2cd
         with:
-          app_name: schoolplanner
-          stable_version: "33"
-          php_version: "8.3"
+          app: schoolplanner
+          check-code: false
 
       - name: Package app
         working-directory: ../server/apps/schoolplanner
