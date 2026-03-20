@@ -11,6 +11,7 @@ permissions:
 env:
   APP_NAME: schoolplanner
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
 
 jobs:
   build_and_publish:
@@ -137,11 +138,11 @@ jobs:
           overwrite: true
 
       - name: Upload app to Nextcloud App Store
-        if: ${{ secrets.APPSTORE_TOKEN != '' }}
+        if: ${{ env.APPSTORE_TOKEN != '' }}
         uses: R0Wi/nextcloud-appstore-push-action@v1
         with:
           app_name: ${{ env.APP_NAME }}
-          appstore_token: ${{ secrets.APPSTORE_TOKEN }}
+          appstore_token: ${{ env.APPSTORE_TOKEN }}
           download_url: ${{ steps.attach_to_release.outputs.browser_download_url }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
           nightly: ${{ github.event.release.prerelease }}
