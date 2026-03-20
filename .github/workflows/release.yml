@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
 
     steps:
       - name: Checkout
@@ -58,11 +60,11 @@ jobs:
           files: ../server/apps/schoolplanner/build/artifacts/appstore/schoolplanner.tar.gz
 
       - name: Publish to Nextcloud App Store
-        if: ${{ secrets.APPSTORE_TOKEN != '' }}
+        if: ${{ env.APPSTORE_TOKEN != '' }}
         uses: R0Wi/nextcloud-appstore-push-action@v1
         with:
           app_id: schoolplanner
-          appstore_token: ${{ secrets.APPSTORE_TOKEN }}
+          appstore_token: ${{ env.APPSTORE_TOKEN }}
           download_url: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/schoolplanner.tar.gz
           release_notes: ${{ github.event.release.body }}
           nightly: ${{ github.event.release.prerelease }}
