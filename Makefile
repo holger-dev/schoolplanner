@@ -4,6 +4,8 @@ APPSTORE_BUILD_DIR := $(BUILD_DIR)/artifacts/appstore
 APPSTORE_PACKAGE_DIR := $(APPSTORE_BUILD_DIR)/$(APP_NAME)
 APPSTORE_PACKAGE := $(APPSTORE_BUILD_DIR)/$(APP_NAME).tar.gz
 CERT_DIR := $(HOME)/.nextcloud/certificates
+ROOT_DIR := $(shell pwd)
+OCC ?= $(ROOT_DIR)/../../occ
 
 RSYNC_EXCLUDES := \
 	--exclude='.git/' \
@@ -47,7 +49,7 @@ appstore: clean
 	php ./bin/tools/file_from_env.php app_public_crt "$(CERT_DIR)/$(APP_NAME).crt"
 	@if [ -f "$(CERT_DIR)/$(APP_NAME).key" ] && [ -f "$(CERT_DIR)/$(APP_NAME).crt" ]; then \
 		echo "Signing app files..."; \
-		php ../../occ integrity:sign-app \
+		php "$(OCC)" integrity:sign-app \
 			--privateKey="$(CERT_DIR)/$(APP_NAME).key" \
 			--certificate="$(CERT_DIR)/$(APP_NAME).crt" \
 			--path="$(APPSTORE_PACKAGE_DIR)"; \
