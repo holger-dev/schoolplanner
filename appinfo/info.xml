@@ -4,15 +4,42 @@
 	<id>schoolplanner</id>
 	<name>School Planner</name>
 	<summary>Lesson planning tool for teachers with publish workflow</summary>
-	<description>Plan courses, lessons and lesson flow elements inside Nextcloud and publish selected content to an external web server.</description>
-	<version>1.0.0</version>
+	<description><![CDATA[
+# School Planner
+
+School Planner is a Nextcloud app for teachers who want to plan courses, structure lessons and publish selected lesson content for students as a public website.
+
+## Features
+
+- Create, rename and delete courses
+- Plan lessons with date, slot, topic, goal and description
+- Build lesson flows from markdown-based elements
+- Upload files per element
+- Use recurring lessons and copy lessons between courses
+- Track internal reflections and teacher notes
+- Use a live mode for classroom progression
+- Publish selected content to a student-facing website via SFTP
+- Export and import complete planning data including attachments
+]]></description>
+	<version>1.0.1</version>
 	<licence>agpl</licence>
-	<author mail="dev@example.invalid">Codex</author>
+	<author mail="holger@heidkamp.dev" homepage="https://heidkamp.dev">Holger Heidkamp</author>
 	<namespace>SchoolPlanner</namespace>
 	<category>organization</category>
-	<bugs>https://example.invalid/schoolplanner/issues</bugs>
+	<website>https://github.com/holger-dev/schoolplanner</website>
+	<repository>https://github.com/holger-dev/schoolplanner</repository>
+	<documentation>
+		<admin>https://github.com/holger-dev/schoolplanner#readme</admin>
+		<developer>https://github.com/holger-dev/schoolplanner#readme</developer>
+		<user>https://github.com/holger-dev/schoolplanner#readme</user>
+	</documentation>
+	<bugs>https://github.com/holger-dev/schoolplanner/issues</bugs>
+	<screenshot>https://raw.githubusercontent.com/holger-dev/schoolplanner/main/images/Bildschirmfoto%202026-03-18%20um%2012.36.20.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/holger-dev/schoolplanner/main/images/Bildschirmfoto%202026-03-18%20um%2012.36.32.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/holger-dev/schoolplanner/main/images/Bildschirmfoto%202026-03-18%20um%2012.36.43.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/holger-dev/schoolplanner/main/images/Bildschirmfoto%202026-03-18%20um%2012.36.52.png</screenshot>
 	<dependencies>
-		<nextcloud min-version="33" max-version="33"/>
+		<nextcloud min-version="32" max-version="33"/>
 	</dependencies>
 	<navigations>
 		<navigation>
