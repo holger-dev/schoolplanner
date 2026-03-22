@@ -17,9 +17,10 @@ class Version000004Date20260318143000 extends SimpleMigrationStep {
 		if ($schema->hasTable('schoolplanner_items')) {
 			$table = $schema->getTable('schoolplanner_items');
 			if (!$table->hasColumn('is_current')) {
-				$table->addColumn('is_current', 'boolean', [
+				$table->addColumn('is_current', 'integer', [
+					'unsigned' => true,
 					'notnull' => true,
-					'default' => false,
+					'default' => 0,
 				]);
 			}
 		}

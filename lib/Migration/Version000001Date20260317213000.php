@@ -48,7 +48,7 @@ class Version000001Date20260317213000 extends SimpleMigrationStep {
 			$table->addColumn('lesson_id', 'integer', ['unsigned' => true, 'notnull' => true]);
 			$table->addColumn('title', 'string', ['length' => 255, 'notnull' => true]);
 			$table->addColumn('description', 'text', ['notnull' => false]);
-			$table->addColumn('published', 'boolean', ['notnull' => true, 'default' => false]);
+			$table->addColumn('published', 'integer', ['unsigned' => true, 'notnull' => true, 'default' => 0]);
 			$table->addColumn('sort_order', 'integer', ['unsigned' => true, 'notnull' => true, 'default' => 0]);
 			$table->addColumn('created_at', 'datetime', ['notnull' => true]);
 			$table->addColumn('updated_at', 'datetime', ['notnull' => true]);
@@ -59,4 +59,3 @@ class Version000001Date20260317213000 extends SimpleMigrationStep {
 		return $schema;
 	}
 }
-
