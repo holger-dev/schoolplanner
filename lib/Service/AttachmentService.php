@@ -12,6 +12,8 @@ use OCP\Files\NotFoundException;
 use OCP\IDBConnection;
 
 class AttachmentService {
+	private const TABLE_ATTACHMENTS = 'sp_attachments';
+
 	public function __construct(
 		private IDBConnection $connection,
 		private IAppDataFactory $appDataFactory,
@@ -48,7 +50,7 @@ class AttachmentService {
 
 		$now = new DateTimeImmutable();
 		$query = $this->connection->getQueryBuilder();
-		$query->insert('schoolplanner_attachments')
+		$query->insert(self::TABLE_ATTACHMENTS)
 			->values([
 				'item_id' => $query->createNamedParameter($item['id'], IQueryBuilder::PARAM_INT),
 				'file_name' => $query->createNamedParameter($originalName),
@@ -59,7 +61,7 @@ class AttachmentService {
 			])
 			->executeStatement();
 
-		$attachmentId = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_attachments');
+		$attachmentId = (int)$this->connection->lastInsertId('*PREFIX*' . self::TABLE_ATTACHMENTS);
 		foreach ($this->getAttachmentsForItem($itemId) as $attachment) {
 			if ((int)$attachment['id'] === $attachmentId) {
 				return $attachment;
@@ -80,7 +82,7 @@ class AttachmentService {
 
 		$query = $this->connection->getQueryBuilder();
 		$result = $query->select('*')
-			->from('schoolplanner_attachments')
+			->from(self::TABLE_ATTACHMENTS)
 			->where($query->expr()->in('item_id', $query->createNamedParameter($itemIds, IQueryBuilder::PARAM_INT_ARRAY)))
 			->orderBy('created_at', 'ASC')
 			->addOrderBy('id', 'ASC')
@@ -127,7 +129,7 @@ class AttachmentService {
 		}
 
 		$query = $this->connection->getQueryBuilder();
-		$query->delete('schoolplanner_attachments')
+		$query->delete(self::TABLE_ATTACHMENTS)
 			->where($query->expr()->eq('item_id', $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT)))
 			->executeStatement();
 	}
@@ -147,7 +149,7 @@ class AttachmentService {
 			$targetFolder->newFile($storedName, $this->readAttachmentContent($attachment));
 
 			$query = $this->connection->getQueryBuilder();
-			$query->insert('schoolplanner_attachments')
+			$query->insert(self::TABLE_ATTACHMENTS)
 				->values([
 					'item_id' => $query->createNamedParameter($targetItemId, IQueryBuilder::PARAM_INT),
 					'file_name' => $query->createNamedParameter($originalName),
@@ -171,7 +173,7 @@ class AttachmentService {
 
 		$now = new DateTimeImmutable();
 		$query = $this->connection->getQueryBuilder();
-		$query->insert('schoolplanner_attachments')
+		$query->insert(self::TABLE_ATTACHMENTS)
 			->values([
 				'item_id' => $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT),
 				'file_name' => $query->createNamedParameter($storedOriginalName),
@@ -182,7 +184,7 @@ class AttachmentService {
 			])
 			->executeStatement();
 
-		$attachmentId = (int)$this->connection->lastInsertId('*PREFIX*schoolplanner_attachments');
+		$attachmentId = (int)$this->connection->lastInsertId('*PREFIX*' . self::TABLE_ATTACHMENTS);
 		foreach ($this->getAttachmentsForItem($itemId) as $attachment) {
 			if ((int)$attachment['id'] === $attachmentId) {
 				return $attachment;

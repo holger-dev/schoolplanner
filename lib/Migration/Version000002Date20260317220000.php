@@ -14,8 +14,8 @@ class Version000002Date20260317220000 extends SimpleMigrationStep {
 		/** @var ISchemaWrapper $schema */
 		$schema = $schemaClosure();
 
-		if (!$schema->hasTable('schoolplanner_attachments')) {
-			$table = $schema->createTable('schoolplanner_attachments');
+		if (!$schema->hasTable('sp_attachments')) {
+			$table = $schema->createTable('sp_attachments');
 			$table->addColumn('id', 'integer', ['autoincrement' => true, 'unsigned' => true, 'notnull' => true]);
 			$table->addColumn('item_id', 'integer', ['unsigned' => true, 'notnull' => true]);
 			$table->addColumn('file_name', 'string', ['length' => 255, 'notnull' => true]);

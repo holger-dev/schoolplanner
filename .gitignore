@@ -15,6 +15,7 @@ build/
 docker/nextcloud/html/
 docker/nextcloud/data/
 docker/db/
+docker/nc32/
 
 # Logs
 *.log

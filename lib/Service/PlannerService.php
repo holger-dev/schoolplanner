@@ -596,7 +596,7 @@ class PlannerService {
 
 		$query = $this->connection->getQueryBuilder();
 		$result = $query->select('*')
-			->from('schoolplanner_attachments')
+			->from('sp_attachments')
 			->where($query->expr()->in('item_id', $query->createNamedParameter($itemIds, IQueryBuilder::PARAM_INT_ARRAY)))
 			->orderBy('created_at', 'ASC')
 			->addOrderBy('id', 'ASC')

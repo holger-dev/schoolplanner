@@ -1,0 +1,47 @@
+name: schoolplanner-nc32
+
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command:
+      - --transaction-isolation=READ-COMMITTED
+      - --log-bin=binlog
+      - --binlog-format=ROW
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloud
+    volumes:
+      - ./docker/nc32/db:/var/lib/mysql
+    networks:
+      - schoolplanner-nc32
+
+  app:
+    image: nextcloud:32.0.0-apache
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8081:80"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloud
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_ADMIN_PASSWORD: admin
+    volumes:
+      - ./docker/nc32/html:/var/www/html
+      - ./:/var/www/html/custom_apps/schoolplanner
+    networks:
+      - schoolplanner-nc32
+
+networks:
+  schoolplanner-nc32:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.31.252.0/24
+        - subnet: fd42:3456:789a:3::/64
