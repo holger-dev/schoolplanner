@@ -490,11 +490,17 @@
 
 				<template v-else>
 					<div class="live-mode__stage">
-						<section class="live-mode__card live-mode__card--current">
-							<span class="live-mode__label">Aktuelles Element</span>
-							<h3>{{ liveCurrentItem.title }}</h3>
-							<p>{{ truncateText(stripMarkdown(liveCurrentItem.description), 180) || 'Kein Beschreibungstext.' }}</p>
-						</section>
+						<div class="live-mode__column">
+							<section class="live-mode__card live-mode__card--current">
+								<span class="live-mode__label">Aktuelles Element</span>
+								<h3>{{ liveCurrentItem.title }}</h3>
+								<p>{{ truncateText(stripMarkdown(liveCurrentItem.description), 180) || 'Kein Beschreibungstext.' }}</p>
+							</section>
+							<div v-if="liveCurrentItem.teacherNote" class="live-mode__teacher-note">
+								<span class="live-mode__teacher-note-label">Lehrerhinweis</span>
+								<p>{{ liveCurrentItem.teacherNote }}</p>
+							</div>
+						</div>
 
 						<div class="live-mode__controls">
 							<NcButton
@@ -510,6 +516,10 @@
 							<template v-if="liveNextItem">
 								<h3>{{ liveNextItem.title }}</h3>
 								<p>{{ truncateText(stripMarkdown(liveNextItem.description), 180) || 'Kein Beschreibungstext.' }}</p>
+								<div v-if="liveNextItem.teacherNote" class="live-mode__teacher-note">
+									<span class="live-mode__teacher-note-label">Lehrerhinweis</span>
+									<p>{{ liveNextItem.teacherNote }}</p>
+								</div>
 							</template>
 							<template v-else>
 								<h3>Kein weiteres Element</h3>
@@ -1967,6 +1977,12 @@ export default {
 	align-items: stretch;
 }
 
+.live-mode__column {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
 .live-mode__card {
 	display: flex;
 	flex-direction: column;
@@ -1999,6 +2015,41 @@ export default {
 	display: flex;
 	align-items: center;
 	justify-content: center;
+}
+
+.live-mode__teacher-note {
+	padding: 0.9rem 1rem;
+	border: 2px solid #c27a00;
+	border-radius: 10px;
+	background: linear-gradient(180deg, #fff4bf 0%, #ffe082 100%);
+	box-shadow: 0 8px 20px rgba(194, 122, 0, 0.16);
+}
+
+.live-mode__teacher-note-label {
+	display: block;
+	margin-bottom: 0.25rem;
+	font-size: 0.78rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: #7a4b00;
+}
+
+.live-mode__teacher-note p {
+	margin: 0;
+	color: #4a3400;
+}
+
+@media (prefers-color-scheme: dark) {
+	.live-mode__teacher-note {
+		border-color: #f0b429;
+		background: linear-gradient(180deg, #5a4300 0%, #7a5900 100%);
+		box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+	}
+
+	.live-mode__teacher-note-label,
+	.live-mode__teacher-note p {
+		color: #fff3c4;
+	}
 }
 
 .block-planner-header {

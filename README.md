@@ -16,7 +16,7 @@ The app uses Nextcloud Vue components, stores all planning data inside Nextcloud
 - Store internal-only teacher notes per lesson element (`Hinweise für Lehrer:in`)
 - Mark elements as `Veröffentlichen`
 - Mark exactly one element per lesson as `Aktuell`
-- Use the `Live-Modus` to walk through a lesson step by step and update the public page
+- Use the `Live-Modus` to walk through a lesson step by step, including internal teacher notes, and update the public page
 - Upload files per lesson element for student downloads
 - Open a weekly `Blockansicht` for all courses across Monday to Friday
 - Highlight lessons without elements in the block planner
@@ -71,6 +71,8 @@ Internal-only lesson fields:
 
 - lesson reflection (`Fazit der Stunde`)
 - teacher note per element (`Hinweise für Lehrer:in`)
+
+The `Live-Modus` shows these teacher notes for the current and upcoming element without publishing them on the public website.
 
 The reflection of one lesson is automatically shown at the top of the following lesson as `Fazit aus der letzten Stunde`.
 

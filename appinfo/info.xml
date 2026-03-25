@@ -17,11 +17,11 @@ School Planner is a Nextcloud app for teachers who want to plan courses, structu
 - Upload files per element
 - Use recurring lessons and copy lessons between courses
 - Track internal reflections and teacher notes
-- Use a live mode for classroom progression
+- Use a live mode for classroom progression including teacher notes
 - Publish selected content to a student-facing website via SFTP
 - Export and import complete planning data including attachments
 ]]></description>
-	<version>1.0.4</version>
+	<version>1.0.6</version>
 	<licence>agpl</licence>
 	<author mail="holger@heidkamp.dev" homepage="https://heidkamp.dev">Holger Heidkamp</author>
 	<namespace>SchoolPlanner</namespace>
