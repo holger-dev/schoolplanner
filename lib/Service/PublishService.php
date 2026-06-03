@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace OCA\SchoolPlanner\Service;
 
 use DateTimeImmutable;
-use League\CommonMark\CommonMarkConverter;
+use League\CommonMark\Environment\Environment;
+use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
+use League\CommonMark\Extension\ExternalLink\ExternalLinkExtension;
+use League\CommonMark\MarkdownConverter;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use phpseclib3\Net\SFTP;
 
 class PublishService {
+	private ?MarkdownConverter $markdownConverter = null;
+
 	public function __construct(
 		private PlannerService $plannerService,
 		private AttachmentService $attachmentService,
@@ -259,11 +264,14 @@ class PublishService {
 				return $this->renderLessonDetail($course, $lesson, 'assets', true, $panelId, $isActive);
 			}, $course['lessons']));
 
+		$linksBlock = $this->renderCourseLinks($course);
+
 		return $this->renderPage(
 			$course['name'],
 			'<nav class="breadcrumb"><a href="../../index.html">Kursübersicht</a></nav>'
-			. '<section class="course-hero">'
-			. '<div><h1>' . $this->escape($course['name']) . '</h1></div>'
+			. '<section class="course-hero' . ($linksBlock !== '' ? ' course-hero--split' : '') . '">'
+			. '<div class="course-hero__title"><h1>' . $this->escape($course['name']) . '</h1></div>'
+			. $linksBlock
 			. '</section>'
 			. '<section class="course-layout">'
 			. '<aside class="sidebar-card"><div class="sidebar-card__header"><h2>Stunden</h2></div>'
@@ -284,6 +292,25 @@ class PublishService {
 			. $this->renderLessonDetail($course, $lesson, '../assets', false);
 
 		return $this->renderPage($lesson['title'] . ' - ' . $course['name'], $content, '../__schoolplanner_version.json');
+	}
+
+	/**
+	 * @param array<string, mixed> $course
+	 */
+	private function renderCourseLinks(array $course): string {
+		$links = $course['links'] ?? [];
+		if ($links === []) {
+			return '';
+		}
+
+		$items = array_map(function (array $link): string {
+			return '<li><a href="' . $this->escape((string)$link['url']) . '" target="_blank" rel="noopener noreferrer">'
+				. $this->escape((string)$link['label']) . '</a></li>';
+		}, $links);
+
+		return '<div class="hero-links"><h3>Wichtige Links</h3><ul class="hero-links__list">'
+			. implode('', $items)
+			. '</ul></div>';
 	}
 
 	private function renderPage(string $title, string $content, ?string $refreshPath = null): string {
@@ -335,6 +362,13 @@ class PublishService {
 			. '.lesson-list-item h3{margin:.45rem 0;font-size:1.08rem;}'
 			. '.lesson-list-item p{margin:0;color:var(--page-muted);line-height:1.5;}'
 			. '.content-stage{display:flex;flex-direction:column;gap:18px;}'
+			. '.course-hero--split{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;}'
+			. '.course-hero__title{flex:1 1 320px;min-width:0;}'
+			. '.hero-links{flex:0 1 auto;max-width:100%;min-width:240px;border:1px solid rgba(56,189,248,.25);background:rgba(56,189,248,.06);border-radius:10px;padding:12px 14px;}'
+			. '.hero-links h3{margin:0 0 .55rem;font-size:1rem;color:var(--page-muted);text-transform:uppercase;letter-spacing:.03em;}'
+			. '.hero-links__list{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:.5rem;}'
+			. '.hero-links__list a{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .7rem;border-radius:999px;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);font-weight:600;word-break:break-word;}'
+			. '.hero-links__list a:hover{text-decoration:none;border-color:rgba(56,189,248,.6);background:rgba(56,189,248,.18);}'
 			. '.lesson-panel{display:none;}'
 			. '.lesson-panel--active{display:block;}'
 			. '.card{border-radius:10px;padding:22px 24px;margin:0;}'
@@ -362,7 +396,7 @@ class PublishService {
 			. '.codeblock{position:relative;}'
 			. '.copy-button{position:absolute;top:.7rem;right:.7rem;border:1px solid #2e415f;background:#10192b;color:#dbeafe;border-radius:6px;padding:.3rem .55rem;font:600 .8rem Calibri,Candara,"Segoe UI",Arial,sans-serif;cursor:pointer;}'
 			. '.copy-button:hover{background:#16233a;}'
-			. '@media (max-width:960px){.site-shell{padding:22px 16px 40px;}.course-grid{grid-template-columns:1fr;}.course-layout{grid-template-columns:1fr;}.sidebar-card{position:static;}.card__header{flex-direction:column;}.course-card__meta{flex-direction:column;align-items:flex-start;}}'
+			. '@media (max-width:960px){.site-shell{padding:22px 16px 40px;}.course-grid{grid-template-columns:1fr;}.course-layout{grid-template-columns:1fr;}.sidebar-card{position:static;}.course-hero--split{flex-direction:column;}.hero-links{min-width:0;width:100%;}.card__header{flex-direction:column;}.course-card__meta{flex-direction:column;align-items:flex-start;}}'
 			. '</style></head><body><div class="site-shell">' . $content . '</div>'
 			. $refreshConfig
 			. '<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>'
@@ -466,11 +500,24 @@ class PublishService {
 	}
 
 	private function renderMarkdown(string $value): string {
-		$converter = new CommonMarkConverter([
-			'html_input' => 'strip',
-			'allow_unsafe_links' => false,
-		]);
-		return (string)$converter->convert($value);
+		if ($this->markdownConverter === null) {
+			$environment = new Environment([
+				'html_input' => 'strip',
+				'allow_unsafe_links' => false,
+				'external_link' => [
+					// Treat every absolute link as external so it opens in a new tab.
+					'internal_hosts' => [],
+					'open_in_new_window' => true,
+					'noopener' => 'external',
+					'noreferrer' => 'external',
+				],
+			]);
+			$environment->addExtension(new CommonMarkCoreExtension());
+			$environment->addExtension(new ExternalLinkExtension());
+			$this->markdownConverter = new MarkdownConverter($environment);
+		}
+
+		return (string)$this->markdownConverter->convert($value);
 	}
 
 	/**

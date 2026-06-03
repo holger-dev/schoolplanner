@@ -65,6 +65,16 @@ export const deleteLessonItem = async (itemId) => {
 	return data
 }
 
+export const reorderLessonItems = async (lessonId, itemIds) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/lessons/${lessonId}/items/reorder`), { itemIds }, { headers: jsonHeaders })
+	return data
+}
+
+export const moveLessonItem = async (itemId, targetLessonId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/items/${itemId}/move`), { targetLessonId }, { headers: jsonHeaders })
+	return data
+}
+
 export const uploadAttachment = async (itemId, file, onUploadProgress) => {
 	const formData = new FormData()
 	formData.append('file', file)
@@ -99,5 +109,137 @@ export const importPlannerData = async (file) => {
 
 export const publishCourse = async (courseId) => {
 	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/publish`))
+	return data
+}
+
+// #9 Zentrale Links pro Kurs
+export const createCourseLink = async (courseId, payload) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/links`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const updateCourseLink = async (linkId, payload) => {
+	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/links/${linkId}`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const deleteCourseLink = async (linkId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/links/${linkId}/delete`))
+	return data
+}
+
+// #2 Deck-Anbindung
+export const setCourseDeck = async (courseId, payload) => {
+	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/deck`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const fetchDeckBoards = async () => {
+	const { data } = await axios.get(generateUrl('/apps/deck/api/v1.0/boards'), { headers: { 'OCS-APIRequest': 'true' } })
+	return Array.isArray(data) ? data : []
+}
+
+export const fetchDeckStacks = async (boardId) => {
+	const { data } = await axios.get(generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks`), { headers: { 'OCS-APIRequest': 'true' } })
+	return Array.isArray(data) ? data : []
+}
+
+export const createDeckCard = async (boardId, stackId, payload) => {
+	const { data } = await axios.post(generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks/${stackId}/cards`), payload, {
+		headers: { ...jsonHeaders, 'OCS-APIRequest': 'true' },
+	})
+	return data
+}
+
+// #7 Schüler:innen
+export const fetchStudents = async (courseId) => {
+	const { data } = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/students`))
+	return data
+}
+
+export const createStudent = async (courseId, payload) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/students`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const importStudents = async (courseId, text) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/students/import`), { text }, { headers: jsonHeaders })
+	return data
+}
+
+export const updateStudent = async (studentId, payload) => {
+	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/students/${studentId}`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const deleteStudent = async (studentId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/students/${studentId}/delete`))
+	return data
+}
+
+export const createStudentGroup = async (courseId, payload) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/student-groups`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const updateStudentGroup = async (groupId, payload) => {
+	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/student-groups/${groupId}`), payload, { headers: jsonHeaders })
+	return data
+}
+
+export const deleteStudentGroup = async (groupId) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/student-groups/${groupId}/delete`))
+	return data
+}
+
+// Mitarbeit
+export const fetchParticipation = async (lessonId) => {
+	const { data } = await axios.get(generateUrl(`/apps/schoolplanner/api/lessons/${lessonId}/participation`))
+	return data
+}
+
+export const saveParticipation = async (lessonId, scale, entries) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/lessons/${lessonId}/participation`), { scale, entries }, { headers: jsonHeaders })
+	return data
+}
+
+export const fetchParticipationOverview = async (courseId) => {
+	const { data } = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/participation`))
+	return data
+}
+
+// #8 Planung als JSON (Export / Vorschau / Import)
+export const exportCoursePlan = async (courseId) => {
+	const response = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan`), {
+		responseType: 'blob',
+	})
+	return {
+		blob: response.data,
+		fileName: response.headers['content-disposition']?.match(/filename="?([^"]+)"?/)?.[1] || 'schoolplanner-plan.json',
+	}
+}
+
+export const fetchCoursePlan = async (courseId) => {
+	const response = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan`))
+	return response.data
+}
+
+export const previewCoursePlan = async (courseId, plan) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan/preview`), { plan }, { headers: jsonHeaders })
+	return data
+}
+
+export const importCoursePlan = async (courseId, plan) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan/import`), { plan }, { headers: jsonHeaders })
+	return data
+}
+
+export const previewPlanFromFolder = async (courseId, path) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan/folder/preview`), { path }, { headers: jsonHeaders })
+	return data
+}
+
+export const importPlanFromFolder = async (courseId, path) => {
+	const { data } = await axios.post(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan/folder/import`), { path }, { headers: jsonHeaders })
 	return data
 }

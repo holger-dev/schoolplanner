@@ -91,10 +91,25 @@
 
 					<div class="list-panel__actions" v-if="selectedCourse">
 						<NcButton type="primary" @click="handleCreateLesson">Neue Stunde</NcButton>
-						<NcButton @click="openLessonSeriesModal">Mehrere Stunden anlegen</NcButton>
-						<NcButton @click="openCopyLessonModal">Stunde kopieren</NcButton>
-						<NcButton @click="handlePublishCourse">Makroplanung veröffentlichen</NcButton>
-						<NcButton @click="confirmRemoveCourse">Kurs löschen</NcButton>
+						<NcActions :menu-name="'Stunden'" :force-menu="true">
+							<NcActionButton :close-after-click="true" @click="openLessonSeriesModal">Mehrere Stunden anlegen</NcActionButton>
+							<NcActionButton :close-after-click="true" @click="openCopyLessonModal">Stunde kopieren</NcActionButton>
+							<NcActionButton :close-after-click="true" @click="openPlanModal">Planung importieren</NcActionButton>
+						</NcActions>
+						<NcActions :menu-name="'Kurs'" :force-menu="true">
+							<NcActionButton :close-after-click="true" @click="openCourseSettings(selectedCourse)">Kurseinstellungen (Skala, Beschreibung)</NcActionButton>
+							<NcActionSeparator />
+							<NcActionCaption name="Schüler:innen" />
+							<NcActionButton :close-after-click="true" @click="openStudentsModal">Schüler:innen verwalten</NcActionButton>
+							<NcActionButton :close-after-click="true" @click="openParticipationOverview">Mitarbeit-Übersicht</NcActionButton>
+							<NcActionSeparator />
+							<NcActionCaption name="Material & Tools" />
+							<NcActionButton :close-after-click="true" @click="openLinksModal">Wichtige Links</NcActionButton>
+							<NcActionButton :close-after-click="true" @click="openDeckModal">Deck</NcActionButton>
+							<NcActionSeparator />
+							<NcActionButton :close-after-click="true" @click="handlePublishCourse">Makroplanung veröffentlichen</NcActionButton>
+							<NcActionButton :close-after-click="true" @click="confirmRemoveCourse">Kurs löschen</NcActionButton>
+						</NcActions>
 					</div>
 
 						<NcEmptyContent
@@ -128,7 +143,8 @@
 			<NcAppContentDetails>
 				<div v-if="selectedLesson" class="details-panel">
 					<div class="details-panel__modebar">
-						<NcButton @click="openLiveModeModal">Live-Modus</NcButton>
+						<NcButton class="live-mode-button" @click="openLiveModeModal">Live-Modus</NcButton>
+						<NcButton @click="openParticipationModal">Mitarbeit erfassen</NcButton>
 					</div>
 					<div class="details-panel__header">
 						<div>
@@ -146,23 +162,26 @@
 							:model-value="lessonDraftDate"
 							label="Datum"
 							type="date"
-							@update:model-value="lessonDraftDate = $event" />
+							@update:model-value="onLessonDateChange" />
 						<NcTextField
 							v-model="lessonDraft.lessonSlot"
 							label="Stundenplanslot"
 							type="number"
 							min="1"
-							max="8" />
+							max="8"
+							@update:model-value="scheduleLessonAutosave" />
 						<NcTextField
 							v-model="lessonDraft.title"
 							label="Thema"
-							placeholder="z. B. Einfuehrung Python" />
+							placeholder="z. B. Einfuehrung Python"
+							@update:model-value="scheduleLessonAutosave" />
 					</div>
 
 					<NcTextField
 						v-model="lessonDraft.goal"
 						label="Ziel der Stunde"
-						placeholder="z. B. SuS verstehen Variablen und erste Python-Skripte" />
+						placeholder="z. B. SuS verstehen Variablen und erste Python-Skripte"
+						@update:model-value="scheduleLessonAutosave" />
 
 					<NcNoteCard v-if="previousLessonReflection" type="warning">
 						<div class="lesson-reflection-preview">
@@ -174,42 +193,66 @@
 					<NcTextArea
 						v-model="lessonDraft.description"
 						label="Beschreibung (Markdown)"
-						resize="vertical" />
+						resize="vertical"
+						@update:model-value="scheduleLessonAutosave" />
 
 					<div class="details-panel__header details-panel__header--sub">
 						<div>
 							<h2>Stundenablauf</h2>
 							<p>{{ selectedLesson ? `${formatDate(selectedLesson.lessonDate)} · ${selectedLesson.title}` : 'Elemente können einzeln veröffentlicht werden.' }}</p>
 						</div>
-						<NcButton @click="handleCreateItem">Element anlegen</NcButton>
 					</div>
 
-					<NcEmptyContent
-						v-if="selectedLesson.items.length === 0"
-						name="Noch keine Ablauf-Elemente"
-						description="Lege das erste Element für diese Stunde an." />
-
-					<div v-else class="item-list">
-						<NcNoteCard
-							v-for="item in selectedLesson.items"
-							:key="item.id"
-							class="item-card"
-							type="info">
-							<div class="item-form">
-								<div class="item-form__toolbar">
-									<div class="item-form__main">
-										<NcTextField
-											v-model="item.title"
-											label="Titel"
-											placeholder="Titel des Elements"
-											@update:model-value="scheduleItemAutosave(item)" />
-									</div>
-									<div class="item-form__toolbar-actions">
-										<NcButton
-											aria-label="Element löschen"
-											title="Element löschen"
-											variant="tertiary"
-											@click="confirmRemoveItem(item)">
+					<div class="item-list">
+						<p v-if="selectedLesson.items.length === 0" class="item-list__empty">
+							Noch keine Ablauf-Elemente. Lege unten das erste an.
+						</p>
+						<template v-for="(item, itemIndex) in selectedLesson.items" :key="item.id">
+							<button
+								type="button"
+								class="item-insert-divider"
+								title="Hier ein Element einfügen"
+								@click="insertItemAt(itemIndex)">
+								<svg viewBox="0 0 24 24" aria-hidden="true" class="item-insert-divider__icon">
+									<path :d="icons.plus" />
+								</svg>
+								<span>Element einfügen</span>
+							</button>
+							<div
+								class="item-card-wrapper"
+								:class="{ 'item-card-wrapper--dragging': draggingItemId === item.id, 'item-card-wrapper--drop': dragOverItemId === item.id }"
+								@dragover.prevent="onItemDragOver(item)"
+								@dragleave="onItemDragLeave(item)"
+								@drop.prevent="onItemDrop(item)">
+								<NcNoteCard
+									class="item-card"
+									type="info">
+									<div class="item-form">
+										<div class="item-form__toolbar">
+											<span
+												class="item-form__drag-handle"
+												draggable="true"
+												aria-label="Zum Sortieren ziehen"
+												title="Zum Sortieren ziehen"
+												@dragstart="onItemDragStart(item, $event)"
+												@dragend="onItemDragEnd">
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.drag" />
+												</svg>
+											</span>
+											<div class="item-form__main">
+												<NcTextField
+													v-model="item.title"
+													label="Titel"
+													placeholder="Titel des Elements"
+													@update:model-value="scheduleItemAutosave(item)" />
+											</div>
+											<div class="item-form__toolbar-actions">
+												<NcButton
+													aria-label="Element löschen"
+													title="Element löschen"
+													variant="tertiary"
+													@click="confirmRemoveItem(item)">
 											<template #icon>
 												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
 													<path :d="icons.delete" />
@@ -237,6 +280,18 @@
 											<template #icon>
 												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
 													<path :d="icons.arrowDown" />
+												</svg>
+											</template>
+										</NcButton>
+										<NcButton
+											:disabled="!nextLessonAfterSelected"
+											aria-label="In nächste Stunde verschieben"
+											title="In nächste Stunde verschieben"
+											variant="tertiary"
+											@click="moveItemToNextLesson(item)">
+											<template #icon>
+												<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon">
+													<path :d="icons.arrowRight" />
 												</svg>
 											</template>
 										</NcButton>
@@ -302,11 +357,20 @@
 									<p v-else>Noch keine Dateien hochgeladen.</p>
 								</div>
 							</div>
-						</NcNoteCard>
+							</NcNoteCard>
+							</div>
+						</template>
 
-						<div class="item-list__footer">
-							<NcButton @click="handleCreateItem">Element hinzufügen</NcButton>
-						</div>
+						<button
+							type="button"
+							class="item-insert-divider item-insert-divider--end"
+							title="Element hinzufügen"
+							@click="insertItemAt(selectedLesson.items.length)">
+							<svg viewBox="0 0 24 24" aria-hidden="true" class="item-insert-divider__icon">
+								<path :d="icons.plus" />
+							</svg>
+							<span>Element hinzufügen</span>
+						</button>
 					</div>
 
 					<NcTextArea
@@ -314,7 +378,7 @@
 						label="Fazit der Stunde"
 						helper-text="Dieses Feld ist nur intern und wird nicht veröffentlicht."
 						resize="vertical"
-						@update:model-value="scheduleLessonReflectionAutosave" />
+						@update:model-value="scheduleLessonAutosave" />
 				</div>
 
 				<NcEmptyContent
@@ -328,7 +392,7 @@
 			<div class="dialog-body">
 				<div class="dialog-header">
 					<h2>{{ courseModalTitle }}</h2>
-					<p>{{ courseDraft.id ? 'Passe Name und Beschreibung des Kurses an.' : 'Lege einen neuen Kurs mit Name und Beschreibung an.' }}</p>
+					<p>{{ courseDraft.id ? 'Passe Name, Beschreibung und Bewertungsskala des Kurses an.' : 'Lege einen neuen Kurs an. Die Bewertungsskala kannst du auch später ändern.' }}</p>
 				</div>
 
 				<NcTextField
@@ -338,6 +402,13 @@
 					v-model="courseDraft.description"
 					label="Beschreibung"
 					resize="vertical" />
+				<NcSelect
+					v-model="courseDraft.participationScaleSelection"
+					:options="scaleOptions"
+					input-label="Bewertungsskala für Mitarbeit"
+					label="label"
+					track-by="value"
+					:clearable="false" />
 				<div class="dialog-actions">
 					<NcButton @click="closeCourseModal">Abbrechen</NcButton>
 					<NcButton type="primary" @click="submitCourseModal">{{ courseDraft.id ? 'Speichern' : 'Kurs anlegen' }}</NcButton>
@@ -414,6 +485,351 @@
 				<div class="dialog-actions">
 					<NcButton @click="closeLessonSeriesModal">Abbrechen</NcButton>
 					<NcButton type="primary" @click="submitLessonSeries">Stunden anlegen</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="linksModalOpen" size="normal" name="Wichtige Links" @close="closeLinksModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Wichtige Links</h2>
+					<p>Zentrale Links für „{{ selectedCourse ? selectedCourse.name : '' }}". Sie erscheinen auch auf der veröffentlichten Kursseite.</p>
+				</div>
+
+				<div v-if="selectedCourse && selectedCourse.links && selectedCourse.links.length" class="link-list">
+					<div v-for="link in selectedCourse.links" :key="link.id" class="link-row">
+						<NcTextField v-model="link.label" label="Bezeichnung" @update:model-value="scheduleLinkSave(link)" />
+						<NcTextField v-model="link.url" label="URL" @update:model-value="scheduleLinkSave(link)" />
+						<NcButton aria-label="Link löschen" title="Link löschen" variant="tertiary" @click="removeCourseLink(link)">
+							<template #icon>
+								<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon"><path :d="icons.delete" /></svg>
+							</template>
+						</NcButton>
+					</div>
+				</div>
+				<p v-else>Noch keine Links hinterlegt.</p>
+
+				<div class="link-add">
+					<NcTextField v-model="linkDraft.label" label="Bezeichnung (optional)" placeholder="z. B. Lehrbuch online" />
+					<NcTextField v-model="linkDraft.url" label="URL" placeholder="https://…" />
+					<NcButton type="primary" :disabled="!linkDraft.url" @click="addCourseLink">Hinzufügen</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="studentsModalOpen" size="large" name="Schüler:innen" @close="closeStudentsModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Schüler:innen</h2>
+					<p>Namen, Notizen und Gruppen für „{{ selectedCourse ? selectedCourse.name : '' }}".</p>
+				</div>
+
+				<div class="student-groups">
+					<strong>Gruppen</strong>
+					<div class="student-group-chips">
+						<span v-for="group in studentData.groups" :key="group.id" class="student-group-chip">
+							<NcTextField v-model="group.name" label="Gruppenname" @update:model-value="scheduleGroupSave(group)" />
+							<NcButton aria-label="Gruppe löschen" title="Gruppe löschen" variant="tertiary" @click="removeStudentGroup(group)">
+								<template #icon>
+									<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon"><path :d="icons.delete" /></svg>
+								</template>
+							</NcButton>
+						</span>
+					</div>
+					<div class="student-group-add">
+						<NcTextField v-model="groupDraft.name" label="Neue Gruppe" placeholder="z. B. Tischgruppe A" />
+						<NcButton :disabled="!groupDraft.name" @click="addStudentGroup">Gruppe anlegen</NcButton>
+					</div>
+				</div>
+
+				<div class="student-import">
+					<NcTextArea
+						v-model="studentImportText"
+						label="Schnell-Import"
+						helper-text="Eine Person pro Zeile. Optional eine Notiz nach Komma oder Semikolon, z. B. Max Muster, sitzt vorne."
+						resize="vertical" />
+					<NcButton :disabled="!studentImportText.trim()" @click="submitStudentImport">Importieren</NcButton>
+				</div>
+
+				<div v-if="studentData.students.length" class="student-list">
+					<div v-for="student in studentData.students" :key="student.id" class="student-row">
+						<NcTextField v-model="student.name" label="Name" @update:model-value="scheduleStudentSave(student)" />
+						<NcTextField v-model="student.note" label="Notiz" @update:model-value="scheduleStudentSave(student)" />
+						<div class="student-row__groups">
+							<NcCheckboxRadioSwitch
+								v-for="group in studentData.groups"
+								:key="`${student.id}-${group.id}`"
+								:model-value="student.groupIds.includes(group.id)"
+								type="checkbox"
+								@update:model-value="toggleStudentGroup(student, group.id, $event)">
+								{{ group.name }}
+							</NcCheckboxRadioSwitch>
+						</div>
+						<NcButton aria-label="Schüler:in löschen" title="Schüler:in löschen" variant="tertiary" @click="removeStudent(student)">
+							<template #icon>
+								<svg viewBox="0 0 24 24" aria-hidden="true" class="item-form__icon"><path :d="icons.delete" /></svg>
+							</template>
+						</NcButton>
+					</div>
+				</div>
+				<p v-else>Noch keine Schüler:innen erfasst.</p>
+
+				<div class="link-add">
+					<NcTextField v-model="studentDraft.name" label="Name" placeholder="Vorname Nachname" />
+					<NcTextField v-model="studentDraft.note" label="Notiz (optional)" />
+					<NcButton type="primary" :disabled="!studentDraft.name" @click="addStudent">Hinzufügen</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="participationModalOpen" size="large" name="Mitarbeit erfassen" @close="closeParticipationModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Mitarbeit erfassen</h2>
+					<p>{{ selectedLesson ? `${formatDate(selectedLesson.lessonDate)} · ${selectedLesson.title}` : '' }}</p>
+				</div>
+
+				<p class="participation-scale-info">
+					Bewertungsskala: <strong>{{ courseScaleLabel }}</strong>
+					<span v-if="!courseScale"> – lege sie in den Kurseinstellungen fest, um Noten vergeben zu können.</span>
+				</p>
+
+				<div v-if="participationRows.length" class="participation-list">
+					<div class="participation-row participation-row--head">
+						<span>Schüler:in</span>
+						<span>Status</span>
+						<span>{{ gradeLabel }}</span>
+						<span>Notiz</span>
+					</div>
+					<div v-for="row in participationRows" :key="row.studentId" class="participation-row">
+						<span class="participation-row__name">{{ row.name }}</span>
+						<div class="participation-cell-field">
+							<NcSelect
+								v-model="row.statusSelection"
+								:options="statusOptions"
+								label="label"
+								track-by="value"
+								:clearable="false" />
+						</div>
+						<div class="participation-cell-field">
+							<select
+								v-if="courseScale === 'note'"
+								v-model="row.grade"
+								class="participation-grade-select">
+								<option value="">–</option>
+								<option v-for="n in 6" :key="n" :value="String(n)">{{ n }}</option>
+							</select>
+							<div v-else-if="gradeButtons.length" class="grade-buttons">
+								<button
+									v-for="sym in gradeButtons"
+									:key="sym"
+									type="button"
+									class="grade-button"
+									:class="{ 'grade-button--active': row.grade === sym }"
+									@click="setGrade(row, sym)">{{ sym }}</button>
+							</div>
+							<span v-else class="participation-no-scale">—</span>
+						</div>
+						<div class="participation-cell-field">
+							<NcTextField v-model="row.note" label="Notiz" placeholder="Notiz" />
+						</div>
+					</div>
+				</div>
+				<p v-else>Für diesen Kurs sind noch keine Schüler:innen erfasst. Lege sie zuerst unter „Schüler:innen" an.</p>
+
+				<div class="dialog-actions">
+					<NcButton @click="closeParticipationModal">Abbrechen</NcButton>
+					<NcButton type="primary" :disabled="participationSaving || !participationRows.length" @click="saveParticipationEntries">
+						{{ participationSaving ? 'Speichere…' : 'Speichern' }}
+					</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="participationOverviewOpen" size="full" name="Mitarbeit-Übersicht" @close="closeParticipationOverview">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Mitarbeit-Übersicht</h2>
+					<p>{{ selectedCourse ? selectedCourse.name : '' }} – Note bzw. Status je Stunde. Leere Zelle = nicht erfasst.</p>
+				</div>
+
+				<p v-if="courseScale && participationOverview.students.length" class="participation-scale-info">
+					Bewertungsskala: <strong>{{ courseScaleLabel }}</strong> · Ø = Notendurchschnitt · <svg viewBox="0 0 24 24" aria-hidden="true" class="participation-note-hint"><path :d="icons.note" /></svg> = Notiz vorhanden (anklicken)
+				</p>
+
+				<div v-if="participationNote" class="participation-note-box">
+					<div class="participation-note-box__head">
+						<strong>{{ participationNote.name }} · {{ participationNote.lessonLabel }}</strong>
+						<button type="button" class="participation-note-box__close" aria-label="Notiz schließen" @click="participationNote = null">×</button>
+					</div>
+					<p>{{ participationNote.text }}</p>
+				</div>
+
+				<div v-if="participationOverview.students.length && participationOverview.lessons.length" class="participation-table-wrap">
+					<table class="participation-table">
+						<thead>
+							<tr>
+								<th class="participation-table__name participation-table__name--head">Schüler:in</th>
+								<th class="participation-table__avg" title="Notendurchschnitt">Ø</th>
+								<th v-for="lesson in participationOverview.lessons" :key="`h-${lesson.id}`">
+									{{ formatShortDate(lesson.date) }}<br><span class="participation-table__slot">{{ lesson.slot }}.</span>
+								</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="student in participationOverview.students" :key="`r-${student.id}`">
+								<td class="participation-table__name">{{ student.name }}</td>
+								<td class="participation-table__avg">{{ studentAverage(student.id) }}</td>
+								<td
+									v-for="lesson in participationOverview.lessons"
+									:key="`c-${student.id}-${lesson.id}`"
+									class="participation-cell"
+									:class="cellClass(student.id, lesson.id)"
+									:title="cellTitle(student.id, lesson.id)">
+									<span class="participation-cell__value">{{ cellText(student.id, lesson.id) }}</span>
+									<button
+										v-if="cellHasNote(student.id, lesson.id)"
+										type="button"
+										class="participation-cell__note-btn"
+										:class="{ 'participation-cell__note-btn--active': isNoteOpen(student.id, lesson.id) }"
+										title="Notiz anzeigen"
+										@click="toggleCellNote(student, lesson)">
+										<svg viewBox="0 0 24 24" aria-hidden="true"><path :d="icons.note" /></svg>
+									</button>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p v-else>Noch keine Daten – lege Schüler:innen und Stunden an und erfasse Mitarbeit.</p>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="deckModalOpen" size="normal" name="Deck" @close="closeDeckModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Deck-Anbindung</h2>
+					<p>Verknüpfe diesen Kurs mit einem Deck-Board und lege Aufgaben aus Stunden an.</p>
+				</div>
+
+				<NcNoteCard v-if="deckError" type="error">{{ deckError }}</NcNoteCard>
+
+				<NcSelect
+					v-model="deckBoardSelection"
+					:options="deckBoardOptions"
+					input-label="Board"
+					label="label"
+					track-by="value"
+					placeholder="Board auswählen"
+					@update:model-value="onDeckBoardChange" />
+				<NcSelect
+					v-model="deckStackSelection"
+					:options="deckStackOptions"
+					input-label="Liste / Stack"
+					label="label"
+					track-by="value"
+					placeholder="Liste auswählen"
+					:disabled="deckStackOptions.length === 0" />
+				<div class="dialog-actions">
+					<NcButton @click="closeDeckModal">Schließen</NcButton>
+					<NcButton type="primary" :disabled="!deckBoardSelection || !deckStackSelection" @click="saveDeckSelection">Verknüpfung speichern</NcButton>
+				</div>
+
+				<div v-if="selectedCourse && selectedCourse.deckBoardId && selectedCourse.deckStackId" class="deck-create">
+					<strong>Aufgabe anlegen</strong>
+					<p>Erzeugt eine Deck-Karte aus der aktuell gewählten Stunde.</p>
+					<NcButton :disabled="!selectedLesson" @click="createDeckCardFromLesson">Aktuelle Stunde als Karte anlegen</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
+		<NcModal v-if="planModalOpen" size="large" name="Planung importieren" @close="closePlanModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>Planung importieren</h2>
+					<p>Export/Import über JSON oder direkt aus Markdown-Dateien in deiner Nextcloud. Stunden werden über Datum + Slot in „{{ selectedCourse ? selectedCourse.name : '' }}" zusammengeführt: gleiche Kombination wird überschrieben, neue wird angelegt.</p>
+				</div>
+
+				<div class="plan-section">
+					<strong>Export</strong>
+					<div class="plan-actions">
+						<NcButton @click="downloadCoursePlan">Als JSON-Datei herunterladen</NcButton>
+						<NcButton @click="copyCoursePlan">In Zwischenablage kopieren</NcButton>
+					</div>
+				</div>
+
+				<div class="plan-section">
+					<strong>Import aus JSON</strong>
+					<NcTextArea
+						v-model="planImportText"
+						label="JSON einfügen"
+						placeholder='{ "schoolplanner": "course-plan", "version": 1, "course": { … } }'
+						resize="vertical" />
+					<div class="plan-actions">
+						<NcButton :disabled="!planImportText.trim() || planChecking" @click="checkPlan">
+							{{ planChecking ? 'Prüfe…' : 'JSON prüfen' }}
+						</NcButton>
+					</div>
+				</div>
+
+				<div class="plan-section">
+					<strong>Import aus Nextcloud-Ordner (Markdown)</strong>
+					<p class="plan-hint">Markdown-Dateien aus deiner Nextcloud einlesen. Wähle einen Ordner oder eine einzelne Datei.</p>
+					<div class="plan-actions">
+						<NcButton :disabled="planChecking" @click="pickPlanFolder">Ordner / Datei wählen</NcButton>
+						<span v-if="planFolderPath" class="plan-path">{{ planFolderPath }}</span>
+					</div>
+
+					<details class="plan-help">
+						<summary>So sieht eine Stunde aus (mit Links, Bildern, Dateien)</summary>
+						<p class="plan-hint">
+							Jede Stunde beginnt mit <code>date:</code> und <code>slot:</code> (Pflicht), optional <code>title:</code> und <code>goal:</code>.
+							Danach optional ein Beschreibungstext, dann je Ablaufschritt eine <code>## Überschrift</code>.
+							Mehrere Stunden einfach untereinander schreiben – jede neue beginnt wieder mit <code>date:</code>.
+						</p>
+						<p class="plan-hint">
+							Links: <code>[Text](URL)</code> · Bilder: <code>![Alt](URL)</code> ·
+							Dateien: als Link auf eine Freigabe. Hochgeladene Datei-Anhänge fügst du nach dem Import am Element hinzu.
+						</p>
+						<pre class="plan-example">{{ markdownExample }}</pre>
+						<div class="plan-actions">
+							<NcButton @click="copyMarkdownExample">Beispiel kopieren</NcButton>
+							<NcButton @click="copyAiPromptTemplate">KI-Prompt kopieren</NcButton>
+						</div>
+					</details>
+				</div>
+
+				<div class="plan-section">
+					<NcNoteCard v-if="planPreview && planPreview.errors && planPreview.errors.length" type="error">
+						<ul class="plan-errors">
+							<li v-for="(err, index) in planPreview.errors" :key="`plan-err-${index}`">{{ err }}</li>
+						</ul>
+					</NcNoteCard>
+
+					<div v-if="planPreview && planPreview.valid" class="plan-preview">
+						<NcNoteCard type="success">
+							{{ planPreview.summary.new }} neue Stunden, {{ planPreview.summary.overwrite }} werden überschrieben,
+							{{ planPreview.summary.studentsNew }} neue Schüler:innen, {{ planPreview.summary.linksNew }} neue Links.
+						</NcNoteCard>
+						<ul class="plan-lesson-list">
+							<li v-for="(lesson, index) in planPreview.lessons" :key="`plan-lesson-${index}`">
+								<span class="plan-badge" :class="lesson.status === 'overwrite' ? 'plan-badge--overwrite' : 'plan-badge--new'">
+									{{ lesson.status === 'overwrite' ? 'überschreiben' : 'neu' }}
+								</span>
+								{{ lesson.date }} · {{ lesson.slot }}. Std. · {{ lesson.title }}
+								<span v-if="lesson.itemCount">({{ lesson.itemCount }} Elemente)</span>
+							</li>
+						</ul>
+					</div>
+
+					<div class="plan-actions">
+						<NcButton
+							type="primary"
+							:disabled="!planPreview || !planPreview.valid || planImporting"
+							@click="runPlanImport">
+							{{ planImporting ? 'Importiere…' : 'Importieren' }}
+						</NcButton>
+					</div>
 				</div>
 			</div>
 		</NcModal>
@@ -560,9 +976,13 @@
 </template>
 
 <script>
-import { showError, showSuccess } from '@nextcloud/dialogs'
-import { mdiArrowDown, mdiArrowUp, mdiContentSave, mdiDelete } from '@mdi/js'
+import { showError, showSuccess, getFilePickerBuilder, FilePickerType } from '@nextcloud/dialogs'
+import { mdiArrowDown, mdiArrowRight, mdiArrowUp, mdiContentSave, mdiDelete, mdiDrag, mdiNoteTextOutline, mdiPlus } from '@mdi/js'
 import {
+	NcActions,
+	NcActionButton,
+	NcActionCaption,
+	NcActionSeparator,
 	NcAppContent,
 	NcAppContentDetails,
 	NcAppContentList,
@@ -594,17 +1014,47 @@ import {
 	exportPlannerData,
 	fetchBootstrap,
 	importPlannerData,
+	moveLessonItem,
 	publishCourse,
+	reorderLessonItems,
 	saveSettings,
 	uploadAttachment,
 	updateCourse,
 	updateLesson,
 	updateLessonItem,
+	createCourseLink,
+	updateCourseLink,
+	deleteCourseLink,
+	setCourseDeck,
+	fetchDeckBoards,
+	fetchDeckStacks,
+	createDeckCard,
+	fetchStudents,
+	createStudent,
+	importStudents,
+	updateStudent,
+	deleteStudent,
+	createStudentGroup,
+	updateStudentGroup,
+	deleteStudentGroup,
+	fetchParticipation,
+	saveParticipation,
+	fetchParticipationOverview,
+	exportCoursePlan,
+	fetchCoursePlan,
+	previewCoursePlan,
+	importCoursePlan,
+	previewPlanFromFolder,
+	importPlanFromFolder,
 } from './api'
 
 export default {
 	name: 'App',
 	components: {
+		NcActions,
+		NcActionButton,
+		NcActionCaption,
+		NcActionSeparator,
 		NcAppContent,
 		NcAppContentDetails,
 		NcAppContentList,
@@ -630,11 +1080,63 @@ export default {
 			courses: [],
 			selectedCourseId: null,
 			selectedLessonId: null,
+			linksModalOpen: false,
+			linkDraft: { label: '', url: '' },
+			linkSaveTimers: {},
+			studentsModalOpen: false,
+			studentData: { students: [], groups: [] },
+			studentDraft: { name: '', note: '' },
+			groupDraft: { name: '' },
+			studentImportText: '',
+			studentSaveTimers: {},
+			groupSaveTimers: {},
+			participationModalOpen: false,
+			participationRows: [],
+			participationSaving: false,
+			participationOverviewOpen: false,
+			participationOverview: { students: [], lessons: [], grid: {} },
+			participationNote: null,
+			deckModalOpen: false,
+			deckBoards: [],
+			deckStacks: [],
+			deckBoardSelection: null,
+			deckStackSelection: null,
+			deckError: '',
+			planModalOpen: false,
+			planImportText: '',
+			planPreview: null,
+			planChecking: false,
+			planImporting: false,
+			planSource: 'json',
+			planFolderPath: '',
+			markdownExample: [
+				'date: 2026-09-01',
+				'slot: 1',
+				'title: Einführung Python',
+				'goal: SuS verstehen Variablen',
+				'',
+				'Heute steigen wir in Python ein. Material: [Python-Doku](https://docs.python.org/3/)',
+				'',
+				'## Warm-up',
+				'Was ist eine Variable? Beispiele sammeln.',
+				'',
+				'## Übung',
+				'Schreibt ein erstes Skript.',
+			].join('\n'),
+			aiPromptTemplate: [
+				'Erstelle mir Unterrichtsplanungen als Markdown.',
+				'Jede Stunde beginnt mit den Zeilen date: JJJJ-MM-TT und slot: (1-8), optional title und goal.',
+				'Danach optional eine kurze Beschreibung, dann je Ablaufschritt eine ## Überschrift mit Inhalt.',
+				'Mehrere Stunden einfach untereinander (jede beginnt wieder mit date:).',
+				'Links als [Text](URL), Bilder als ![Alt](URL).',
+				'Thema: «… dein Thema …». Rahmen: «… Anzahl Stunden, Klassenstufe …».',
+			].join('\n'),
 			courseModalOpen: false,
 			courseDraft: {
 				id: null,
 				name: '',
 				description: '',
+				participationScaleSelection: { label: 'Keine Note', value: '' },
 			},
 			confirmModalOpen: false,
 			confirmDialog: {
@@ -675,7 +1177,12 @@ export default {
 				progress: 0,
 			},
 			itemAutosaveTimers: {},
-			lessonReflectionAutosaveTimer: null,
+			itemSaveStates: {},
+			draggingItemId: null,
+			dragOverItemId: null,
+			lessonAutosaveTimer: null,
+			lessonSaving: false,
+			lessonSavePending: false,
 			lessonDraft: {
 				id: null,
 				lessonDate: '',
@@ -688,6 +1195,10 @@ export default {
 			icons: {
 				arrowUp: mdiArrowUp,
 				arrowDown: mdiArrowDown,
+				arrowRight: mdiArrowRight,
+				drag: mdiDrag,
+				plus: mdiPlus,
+				note: mdiNoteTextOutline,
 				save: mdiContentSave,
 				delete: mdiDelete,
 			},
@@ -720,6 +1231,56 @@ export default {
 				}
 				return (a.lessonSlot || 1) - (b.lessonSlot || 1)
 			})
+		},
+		nextLessonAfterSelected() {
+			const lessons = this.sortedLessons
+			const index = lessons.findIndex((lesson) => lesson.id === this.selectedLessonId)
+			return index >= 0 ? lessons[index + 1] || null : null
+		},
+		deckBoardOptions() {
+			return this.deckBoards.map((board) => ({ label: board.title, value: board.id }))
+		},
+		deckStackOptions() {
+			return this.deckStacks.map((stack) => ({ label: stack.title, value: stack.id }))
+		},
+		scaleOptions() {
+			return [
+				{ label: 'Keine Note', value: '' },
+				{ label: 'Skala 1–3', value: 'scale3' },
+				{ label: 'Skala 1–5', value: 'scale5' },
+				{ label: 'Note 1–6', value: 'note' },
+			]
+		},
+		statusOptions() {
+			return [
+				{ label: '—', value: '' },
+				{ label: 'Anwesend', value: 'present' },
+				{ label: 'Entschuldigt', value: 'excused' },
+				{ label: 'Unentschuldigt', value: 'unexcused' },
+			]
+		},
+		courseScale() {
+			return this.selectedCourse?.participationScale || ''
+		},
+		courseScaleLabel() {
+			return (this.scaleOptions.find((option) => option.value === this.courseScale) || this.scaleOptions[0]).label
+		},
+		gradeLabel() {
+			if (this.courseScale === 'scale3') return 'Note (1–3)'
+			if (this.courseScale === 'scale5') return 'Note (1–5)'
+			if (this.courseScale === 'note') return 'Note (1–6)'
+			return 'Note'
+		},
+		gradePlaceholder() {
+			if (this.courseScale === 'scale3') return '1–3'
+			if (this.courseScale === 'scale5') return '1–5'
+			if (this.courseScale === 'note') return 'z. B. 2+'
+			return 'Keine Skala'
+		},
+		gradeButtons() {
+			if (this.courseScale === 'scale3') return ['+', '+/-', '-']
+			if (this.courseScale === 'scale5') return ['++', '+', '+/-', '-', '--']
+			return []
 		},
 		courseModalTitle() {
 			return this.courseDraft.id ? 'Kurs bearbeiten' : 'Kurs anlegen'
@@ -815,9 +1376,11 @@ export default {
 		selectedLesson: {
 			immediate: true,
 			handler(lesson) {
-				if (this.lessonReflectionAutosaveTimer) {
-					window.clearTimeout(this.lessonReflectionAutosaveTimer)
-					this.lessonReflectionAutosaveTimer = null
+				if (this.lessonAutosaveTimer) {
+					window.clearTimeout(this.lessonAutosaveTimer)
+					this.lessonAutosaveTimer = null
+					// Flush still-pending edits of the previous lesson before switching.
+					void this.runLessonAutosave()
 				}
 				if (!lesson) {
 					this.lessonDraft = { id: null, lessonDate: '', lessonSlot: '1', title: '', goal: '', description: '', reflection: '' }
@@ -843,8 +1406,8 @@ export default {
 		Object.values(this.itemAutosaveTimers).forEach((timerId) => {
 			window.clearTimeout(timerId)
 		})
-		if (this.lessonReflectionAutosaveTimer) {
-			window.clearTimeout(this.lessonReflectionAutosaveTimer)
+		if (this.lessonAutosaveTimer) {
+			window.clearTimeout(this.lessonAutosaveTimer)
 		}
 	},
 	methods: {
@@ -896,6 +1459,7 @@ export default {
 				id: course.id,
 				name: course.name,
 				description: course.description || '',
+				participationScaleSelection: this.scaleOptions.find((option) => option.value === (course.participationScale || '')) || this.scaleOptions[0],
 			}
 			this.courseModalOpen = true
 		},
@@ -904,6 +1468,7 @@ export default {
 				id: null,
 				name: '',
 				description: '',
+				participationScaleSelection: this.scaleOptions[0],
 			}
 			this.courseModalOpen = true
 		},
@@ -968,9 +1533,16 @@ export default {
 				showError('Kurs konnte nicht umbenannt werden.')
 			}
 		},
+		courseDraftPayload() {
+			return {
+				name: this.courseDraft.name,
+				description: this.courseDraft.description,
+				participationScale: this.courseDraft.participationScaleSelection?.value || '',
+			}
+		},
 		async handleCreateCourse() {
 			try {
-				const course = await createCourse(this.courseDraft)
+				const course = await createCourse(this.courseDraftPayload())
 				this.courses.push(course)
 				this.selectCourse(course.id)
 				this.closeCourseModal()
@@ -981,7 +1553,7 @@ export default {
 		},
 		async saveCourse() {
 			try {
-				const course = await updateCourse(this.courseDraft.id, this.courseDraft)
+				const course = await updateCourse(this.courseDraft.id, this.courseDraftPayload())
 				this.upsertCourse(course)
 				this.closeCourseModal()
 				showSuccess('Kurs gespeichert.')
@@ -1118,9 +1690,9 @@ export default {
 				return
 			}
 
-			if (this.lessonReflectionAutosaveTimer) {
-				window.clearTimeout(this.lessonReflectionAutosaveTimer)
-				this.lessonReflectionAutosaveTimer = null
+			if (this.lessonAutosaveTimer) {
+				window.clearTimeout(this.lessonAutosaveTimer)
+				this.lessonAutosaveTimer = null
 			}
 
 			try {
@@ -1128,31 +1700,75 @@ export default {
 					...this.lessonDraft,
 					lessonSlot: this.normalizeLessonSlot(this.lessonDraft.lessonSlot),
 				})
-				this.replaceLesson(lesson)
+				this.applyLessonUpdateInPlace(lesson)
 				showSuccess('Stunde gespeichert.')
 			} catch (error) {
 				showError('Stunde konnte nicht gespeichert werden.')
 			}
 		},
-		scheduleLessonReflectionAutosave() {
+		onLessonDateChange(value) {
+			// The computed setter writes the value back into lessonDraft.lessonDate.
+			this.lessonDraftDate = value
+			this.scheduleLessonAutosave()
+		},
+		scheduleLessonAutosave() {
 			if (!this.lessonDraft.id) {
 				return
 			}
-			if (this.lessonReflectionAutosaveTimer) {
-				window.clearTimeout(this.lessonReflectionAutosaveTimer)
+			if (this.lessonAutosaveTimer) {
+				window.clearTimeout(this.lessonAutosaveTimer)
 			}
-			this.lessonReflectionAutosaveTimer = window.setTimeout(async () => {
-				this.lessonReflectionAutosaveTimer = null
-				try {
-					const lesson = await updateLesson(this.lessonDraft.id, {
-						...this.lessonDraft,
-						lessonSlot: this.normalizeLessonSlot(this.lessonDraft.lessonSlot),
-					})
-					this.replaceLesson(lesson)
-				} catch (error) {
-					// Keep autosave quiet; the explicit save button still surfaces errors.
-				}
+			this.lessonAutosaveTimer = window.setTimeout(() => {
+				this.lessonAutosaveTimer = null
+				void this.runLessonAutosave()
 			}, 900)
+		},
+		async runLessonAutosave() {
+			if (!this.lessonDraft.id) {
+				return
+			}
+			// Serialise: never run two lesson saves at once; queue a follow-up instead.
+			if (this.lessonSaving) {
+				this.lessonSavePending = true
+				return
+			}
+			this.lessonSaving = true
+			const lessonId = this.lessonDraft.id
+			try {
+				const updated = await updateLesson(lessonId, {
+					...this.lessonDraft,
+					lessonSlot: this.normalizeLessonSlot(this.lessonDraft.lessonSlot),
+				})
+				this.applyLessonUpdateInPlace(updated)
+			} catch (error) {
+				// Keep autosave quiet; the explicit save button still surfaces errors.
+			} finally {
+				this.lessonSaving = false
+				if (this.lessonSavePending) {
+					this.lessonSavePending = false
+					if (this.lessonDraft.id === lessonId) {
+						void this.runLessonAutosave()
+					}
+				}
+			}
+		},
+		applyLessonUpdateInPlace(updated) {
+			// Mutate the existing lesson object in place so its reference stays stable.
+			// That keeps the selectedLesson watcher from resetting the draft the user
+			// is still editing, while the navigation list (title/date/slot) updates.
+			if (!this.selectedCourse || !updated) {
+				return
+			}
+			const lesson = this.selectedCourse.lessons.find((entry) => entry.id === updated.id)
+			if (!lesson) {
+				return
+			}
+			lesson.lessonDate = updated.lessonDate
+			lesson.lessonSlot = updated.lessonSlot
+			lesson.title = updated.title
+			lesson.goal = updated.goal
+			lesson.description = updated.description
+			lesson.reflection = updated.reflection
 		},
 		async removeLesson(lessonId = this.selectedLesson?.id) {
 			if (!lessonId || !this.selectedCourse) {
@@ -1178,6 +1794,9 @@ export default {
 			this.confirmModalOpen = true
 		},
 		async handleCreateItem() {
+			await this.insertItemAt(this.selectedLesson?.items.length ?? 0)
+		},
+		async insertItemAt(index) {
 			if (!this.selectedLesson) {
 				return
 			}
@@ -1190,9 +1809,36 @@ export default {
 					published: false,
 					isCurrent: false,
 				})
-				this.selectedLesson.items.push(item)
+
+				const items = [...this.selectedLesson.items]
+				const safeIndex = Math.max(0, Math.min(index, items.length))
+				items.splice(safeIndex, 0, item)
+
+				// Append goes straight to the end (matches backend sort order); only an
+				// in-between insert needs an explicit reorder.
+				if (safeIndex >= items.length - 1) {
+					this.selectedLesson.items = items
+				} else {
+					await this.persistItemOrder(items)
+				}
 			} catch (error) {
 				showError('Element konnte nicht angelegt werden.')
+			}
+		},
+		async persistItemOrder(orderedItems) {
+			if (!this.selectedLesson) {
+				return
+			}
+
+			this.selectedLesson.items = orderedItems
+			orderedItems.forEach((entry, index) => {
+				entry.sortOrder = index
+			})
+
+			try {
+				await reorderLessonItems(this.selectedLesson.id, orderedItems.map((entry) => entry.id))
+			} catch (error) {
+				showError('Reihenfolge konnte nicht gespeichert werden.')
 			}
 		},
 		scheduleItemAutosave(item) {
@@ -1207,21 +1853,61 @@ export default {
 				void this.saveItem(item, { silent: true })
 			}, 900)
 		},
+		ensureItemSaveState(itemId) {
+			if (!this.itemSaveStates[itemId]) {
+				this.itemSaveStates[itemId] = { saving: false, pending: null }
+			}
+			return this.itemSaveStates[itemId]
+		},
+		syncItemFromServer(localItem, serverItem) {
+			// During silent autosave we keep the text the user is currently editing and
+			// only sync server-managed fields, so in-flight keystrokes are never clobbered.
+			if (!localItem || !serverItem) {
+				return
+			}
+			localItem.attachments = serverItem.attachments ?? localItem.attachments
+			localItem.sortOrder = serverItem.sortOrder ?? localItem.sortOrder
+		},
 		async saveItem(item, options = {}) {
 			const { triggerPublish = false, silent = false } = options
-			if (item?.id && this.itemAutosaveTimers[item.id]) {
+			if (!item?.id) {
+				return
+			}
+			if (this.itemAutosaveTimers[item.id]) {
 				window.clearTimeout(this.itemAutosaveTimers[item.id])
 				delete this.itemAutosaveTimers[item.id]
 			}
+
+			// Serialise saves per item: never run two requests for the same item at once.
+			// If a save is requested while one is in flight, remember it and replay after.
+			const state = this.ensureItemSaveState(item.id)
+			if (state.saving) {
+				state.pending = {
+					triggerPublish: (state.pending?.triggerPublish ?? false) || triggerPublish,
+					silent: state.pending ? state.pending.silent && silent : silent,
+				}
+				return
+			}
+			state.saving = true
+
 			try {
 				if (triggerPublish) {
 					this.publishInProgress = true
 				}
 				const updated = await updateLessonItem(item.id, {
-					...item,
+					title: item.title,
+					description: item.description,
+					teacherNote: item.teacherNote,
+					published: item.published,
+					isCurrent: item.isCurrent,
+					sortOrder: item.sortOrder,
 					triggerPublish,
 				})
-				this.replaceItem(updated)
+				if (silent) {
+					this.syncItemFromServer(item, updated)
+				} else {
+					this.replaceItem(updated)
+				}
 				if (!silent) {
 					showSuccess(triggerPublish ? 'Element gespeichert und publiziert.' : 'Element gespeichert.')
 				}
@@ -1232,6 +1918,13 @@ export default {
 			} finally {
 				if (triggerPublish) {
 					this.publishInProgress = false
+				}
+				state.saving = false
+				const pending = state.pending
+				state.pending = null
+				if (pending) {
+					const fresh = this.selectedLesson?.items.find((entry) => entry.id === item.id) || item
+					void this.saveItem(fresh, pending)
 				}
 			}
 		},
@@ -1366,30 +2059,635 @@ export default {
 				return
 			}
 
-			const items = [...this.selectedLesson.items].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+			const items = [...this.selectedLesson.items]
 			const currentIndex = items.findIndex((entry) => entry.id === item.id)
 			const targetIndex = currentIndex + direction
 			if (currentIndex === -1 || targetIndex < 0 || targetIndex >= items.length) {
 				return
 			}
 
-			const reorderedItems = [...items]
-			const [movedItem] = reorderedItems.splice(currentIndex, 1)
-			reorderedItems.splice(targetIndex, 0, movedItem)
-			const payloads = reorderedItems.map((entry, index) => ({
-				...entry,
-				sortOrder: index,
-			}))
+			const [movedItem] = items.splice(currentIndex, 1)
+			items.splice(targetIndex, 0, movedItem)
+			await this.persistItemOrder(items)
+		},
+		onItemDragStart(item, event) {
+			this.draggingItemId = item.id
+			if (event?.dataTransfer) {
+				event.dataTransfer.effectAllowed = 'move'
+				event.dataTransfer.setData('text/plain', String(item.id))
+			}
+		},
+		onItemDragOver(item) {
+			if (this.draggingItemId && this.draggingItemId !== item.id) {
+				this.dragOverItemId = item.id
+			}
+		},
+		onItemDragLeave(item) {
+			if (this.dragOverItemId === item.id) {
+				this.dragOverItemId = null
+			}
+		},
+		onItemDragEnd() {
+			this.draggingItemId = null
+			this.dragOverItemId = null
+		},
+		async onItemDrop(targetItem) {
+			const sourceId = this.draggingItemId
+			this.draggingItemId = null
+			this.dragOverItemId = null
+			if (!sourceId || sourceId === targetItem.id || !this.selectedLesson) {
+				return
+			}
+
+			const items = [...this.selectedLesson.items]
+			const fromIndex = items.findIndex((entry) => entry.id === sourceId)
+			const toIndex = items.findIndex((entry) => entry.id === targetItem.id)
+			if (fromIndex === -1 || toIndex === -1) {
+				return
+			}
+
+			const [movedItem] = items.splice(fromIndex, 1)
+			items.splice(toIndex, 0, movedItem)
+			await this.persistItemOrder(items)
+		},
+		async moveItemToNextLesson(item) {
+			const target = this.nextLessonAfterSelected
+			if (!target) {
+				showError('Es gibt keine nächste Stunde, in die verschoben werden kann.')
+				return
+			}
 
 			try {
-				const updatedItems = []
-				for (const payload of payloads) {
-					updatedItems.push(await updateLessonItem(payload.id, payload))
+				const response = await moveLessonItem(item.id, target.id)
+				this.clearItemAutosaveTimer(item.id)
+				this.selectedLesson.items = this.selectedLesson.items.filter((entry) => entry.id !== item.id)
+				const targetLesson = this.selectedCourse?.lessons.find((lesson) => lesson.id === target.id)
+				if (targetLesson && response?.item) {
+					if (!Array.isArray(targetLesson.items)) {
+						targetLesson.items = []
+					}
+					targetLesson.items.push(response.item)
 				}
-				updatedItems.forEach((updatedItem) => this.replaceItem(updatedItem))
-				this.selectedLesson.items.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+				showSuccess(`Element in „${target.title}“ verschoben.`)
 			} catch (error) {
-				showError('Reihenfolge konnte nicht geändert werden.')
+				showError('Element konnte nicht verschoben werden.')
+			}
+		},
+		// ---- #9 Wichtige Links pro Kurs ----
+		openLinksModal() {
+			this.linkDraft = { label: '', url: '' }
+			this.linksModalOpen = true
+		},
+		closeLinksModal() {
+			this.linksModalOpen = false
+		},
+		async addCourseLink() {
+			if (!this.selectedCourse || !this.linkDraft.url.trim()) {
+				return
+			}
+			try {
+				const course = await createCourseLink(this.selectedCourse.id, { ...this.linkDraft })
+				this.upsertCourse(course)
+				this.linkDraft = { label: '', url: '' }
+			} catch (error) {
+				showError('Link konnte nicht angelegt werden.')
+			}
+		},
+		scheduleLinkSave(link) {
+			if (!link?.id) {
+				return
+			}
+			if (this.linkSaveTimers[link.id]) {
+				window.clearTimeout(this.linkSaveTimers[link.id])
+			}
+			this.linkSaveTimers[link.id] = window.setTimeout(async () => {
+				delete this.linkSaveTimers[link.id]
+				try {
+					await updateCourseLink(link.id, { label: link.label, url: link.url })
+				} catch (error) {
+					showError('Link konnte nicht gespeichert werden.')
+				}
+			}, 800)
+		},
+		async removeCourseLink(link) {
+			try {
+				const course = await deleteCourseLink(link.id)
+				this.upsertCourse(course)
+			} catch (error) {
+				showError('Link konnte nicht gelöscht werden.')
+			}
+		},
+		// ---- #7 Schüler:innen ----
+		async openStudentsModal() {
+			if (!this.selectedCourse) {
+				return
+			}
+			this.studentsModalOpen = true
+			await this.loadStudents()
+		},
+		closeStudentsModal() {
+			this.studentsModalOpen = false
+			this.studentDraft = { name: '', note: '' }
+			this.groupDraft = { name: '' }
+			this.studentImportText = ''
+		},
+		async loadStudents() {
+			if (!this.selectedCourse) {
+				return
+			}
+			try {
+				this.studentData = await fetchStudents(this.selectedCourse.id)
+			} catch (error) {
+				showError('Schüler:innen konnten nicht geladen werden.')
+			}
+		},
+		async addStudent() {
+			if (!this.selectedCourse || !this.studentDraft.name.trim()) {
+				return
+			}
+			try {
+				this.studentData = await createStudent(this.selectedCourse.id, { ...this.studentDraft })
+				this.studentDraft = { name: '', note: '' }
+			} catch (error) {
+				showError('Schüler:in konnte nicht angelegt werden.')
+			}
+		},
+		scheduleStudentSave(student) {
+			if (!student?.id) {
+				return
+			}
+			if (this.studentSaveTimers[student.id]) {
+				window.clearTimeout(this.studentSaveTimers[student.id])
+			}
+			this.studentSaveTimers[student.id] = window.setTimeout(async () => {
+				delete this.studentSaveTimers[student.id]
+				try {
+					await updateStudent(student.id, { name: student.name, note: student.note, groupIds: student.groupIds })
+				} catch (error) {
+					showError('Schüler:in konnte nicht gespeichert werden.')
+				}
+			}, 800)
+		},
+		async toggleStudentGroup(student, groupId, checked) {
+			const groupIds = new Set(student.groupIds)
+			if (checked) {
+				groupIds.add(groupId)
+			} else {
+				groupIds.delete(groupId)
+			}
+			student.groupIds = [...groupIds]
+			try {
+				await updateStudent(student.id, { name: student.name, note: student.note, groupIds: student.groupIds })
+			} catch (error) {
+				showError('Gruppenzuordnung konnte nicht gespeichert werden.')
+			}
+		},
+		async removeStudent(student) {
+			try {
+				this.studentData = await deleteStudent(student.id)
+			} catch (error) {
+				showError('Schüler:in konnte nicht gelöscht werden.')
+			}
+		},
+		async addStudentGroup() {
+			if (!this.selectedCourse || !this.groupDraft.name.trim()) {
+				return
+			}
+			try {
+				this.studentData = await createStudentGroup(this.selectedCourse.id, { ...this.groupDraft })
+				this.groupDraft = { name: '' }
+			} catch (error) {
+				showError('Gruppe konnte nicht angelegt werden.')
+			}
+		},
+		scheduleGroupSave(group) {
+			if (!group?.id) {
+				return
+			}
+			if (this.groupSaveTimers[group.id]) {
+				window.clearTimeout(this.groupSaveTimers[group.id])
+			}
+			this.groupSaveTimers[group.id] = window.setTimeout(async () => {
+				delete this.groupSaveTimers[group.id]
+				try {
+					await updateStudentGroup(group.id, { name: group.name })
+				} catch (error) {
+					showError('Gruppe konnte nicht gespeichert werden.')
+				}
+			}, 800)
+		},
+		async removeStudentGroup(group) {
+			try {
+				this.studentData = await deleteStudentGroup(group.id)
+			} catch (error) {
+				showError('Gruppe konnte nicht gelöscht werden.')
+			}
+		},
+		async submitStudentImport() {
+			if (!this.selectedCourse || !this.studentImportText.trim()) {
+				return
+			}
+			try {
+				const overview = await importStudents(this.selectedCourse.id, this.studentImportText)
+				this.studentData = overview
+				this.studentImportText = ''
+				showSuccess(`${overview.imported || 0} Schüler:innen importiert.`)
+			} catch (error) {
+				showError('Import fehlgeschlagen.')
+			}
+		},
+		// ---- Mitarbeit ----
+		statusOptionFor(value) {
+			return this.statusOptions.find((option) => option.value === value) || this.statusOptions[0]
+		},
+		async openParticipationModal() {
+			if (!this.selectedLesson) {
+				return
+			}
+			try {
+				const data = await fetchParticipation(this.selectedLesson.id)
+				this.participationRows = (data.students || []).map((student) => ({
+					studentId: student.studentId,
+					name: student.name,
+					// Default to "Anwesend" so the teacher only changes the exceptions.
+					statusSelection: this.statusOptionFor(student.status || 'present'),
+					grade: student.grade || '',
+					note: student.note || '',
+				}))
+				this.participationModalOpen = true
+			} catch (error) {
+				showError('Mitarbeit konnte nicht geladen werden.')
+			}
+		},
+		closeParticipationModal() {
+			this.participationModalOpen = false
+		},
+		setGrade(row, symbol) {
+			// Toggle: clicking the active button again clears the grade.
+			row.grade = row.grade === symbol ? '' : symbol
+		},
+		async saveParticipationEntries() {
+			if (!this.selectedLesson) {
+				return
+			}
+			this.participationSaving = true
+			try {
+				const scale = this.courseScale
+				const entries = this.participationRows.map((row) => ({
+					studentId: row.studentId,
+					status: row.statusSelection?.value || '',
+					grade: row.grade || '',
+					note: row.note || '',
+				}))
+				await saveParticipation(this.selectedLesson.id, scale, entries)
+				showSuccess('Mitarbeit gespeichert.')
+				this.participationModalOpen = false
+			} catch (error) {
+				showError('Mitarbeit konnte nicht gespeichert werden.')
+			} finally {
+				this.participationSaving = false
+			}
+		},
+		async openParticipationOverview() {
+			if (!this.selectedCourse) {
+				return
+			}
+			try {
+				this.participationOverview = await fetchParticipationOverview(this.selectedCourse.id)
+				this.participationNote = null
+				this.participationOverviewOpen = true
+			} catch (error) {
+				showError('Übersicht konnte nicht geladen werden.')
+			}
+		},
+		closeParticipationOverview() {
+			this.participationOverviewOpen = false
+		},
+		participationCell(studentId, lessonId) {
+			return this.participationOverview.grid?.[studentId]?.[lessonId] || null
+		},
+		cellHasNote(studentId, lessonId) {
+			const cell = this.participationCell(studentId, lessonId)
+			return !!(cell && cell.note && cell.note.trim())
+		},
+		isNoteOpen(studentId, lessonId) {
+			return !!this.participationNote
+				&& this.participationNote.studentId === studentId
+				&& this.participationNote.lessonId === lessonId
+		},
+		toggleCellNote(student, lesson) {
+			const cell = this.participationCell(student.id, lesson.id)
+			if (!cell || !cell.note) {
+				return
+			}
+			if (this.isNoteOpen(student.id, lesson.id)) {
+				this.participationNote = null
+				return
+			}
+			this.participationNote = {
+				studentId: student.id,
+				lessonId: lesson.id,
+				name: student.name,
+				lessonLabel: `${this.formatShortDate(lesson.date)} · ${lesson.slot}. Std.`,
+				text: cell.note,
+			}
+		},
+		gradeToNumber(grade) {
+			if (!grade) {
+				return null
+			}
+			if (this.courseScale === 'note') {
+				const value = Number.parseInt(grade, 10)
+				return Number.isNaN(value) ? null : value
+			}
+			if (this.courseScale === 'scale3') {
+				return { '+': 1, '+/-': 2, '-': 3 }[grade] ?? null
+			}
+			if (this.courseScale === 'scale5') {
+				return { '++': 1, '+': 2, '+/-': 3, '-': 4, '--': 5 }[grade] ?? null
+			}
+			return null
+		},
+		studentAverage(studentId) {
+			const lessons = this.participationOverview.grid?.[studentId] || {}
+			const values = []
+			for (const lessonId of Object.keys(lessons)) {
+				const number = this.gradeToNumber(lessons[lessonId].grade)
+				if (number !== null) {
+					values.push(number)
+				}
+			}
+			if (values.length === 0) {
+				return '–'
+			}
+			const avg = values.reduce((sum, value) => sum + value, 0) / values.length
+			return avg.toFixed(1).replace('.', ',')
+		},
+		cellText(studentId, lessonId) {
+			const cell = this.participationCell(studentId, lessonId)
+			if (!cell) {
+				return ''
+			}
+			if (cell.grade) {
+				return cell.grade
+			}
+			if (cell.status === 'present') return '✓'
+			if (cell.status === 'excused') return 'e'
+			if (cell.status === 'unexcused') return 'u'
+			return ''
+		},
+		cellTitle(studentId, lessonId) {
+			const cell = this.participationCell(studentId, lessonId)
+			if (!cell) {
+				return 'nicht erfasst'
+			}
+			const status = this.statusOptionFor(cell.status || '').label
+			return cell.grade ? `Note ${cell.grade} · ${status}` : status
+		},
+		cellClass(studentId, lessonId) {
+			const cell = this.participationCell(studentId, lessonId)
+			if (!cell) {
+				return ''
+			}
+			if (cell.status === 'excused') return 'participation-cell--excused'
+			if (cell.status === 'unexcused') return 'participation-cell--unexcused'
+			if (cell.status === 'present') return 'participation-cell--present'
+			return ''
+		},
+		formatShortDate(value) {
+			if (!value) {
+				return ''
+			}
+			return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(`${value}T00:00:00`))
+		},
+		// ---- #2 Deck ----
+		async openDeckModal() {
+			if (!this.selectedCourse) {
+				return
+			}
+			this.deckModalOpen = true
+			this.deckError = ''
+			this.deckBoardSelection = null
+			this.deckStackSelection = null
+			this.deckStacks = []
+			try {
+				this.deckBoards = await fetchDeckBoards()
+				if (this.selectedCourse.deckBoardId) {
+					const board = this.deckBoards.find((entry) => entry.id === this.selectedCourse.deckBoardId)
+					if (board) {
+						this.deckBoardSelection = { label: board.title, value: board.id }
+						await this.loadDeckStacks(board.id)
+						const stack = this.deckStacks.find((entry) => entry.id === this.selectedCourse.deckStackId)
+						if (stack) {
+							this.deckStackSelection = { label: stack.title, value: stack.id }
+						}
+					}
+				}
+			} catch (error) {
+				this.deckError = 'Die Deck-App ist nicht erreichbar oder nicht installiert.'
+			}
+		},
+		closeDeckModal() {
+			this.deckModalOpen = false
+		},
+		async loadDeckStacks(boardId) {
+			try {
+				this.deckStacks = await fetchDeckStacks(boardId)
+			} catch (error) {
+				this.deckStacks = []
+				this.deckError = 'Listen des Boards konnten nicht geladen werden.'
+			}
+		},
+		async onDeckBoardChange(selection) {
+			this.deckStackSelection = null
+			this.deckStacks = []
+			if (selection?.value) {
+				await this.loadDeckStacks(selection.value)
+			}
+		},
+		async saveDeckSelection() {
+			if (!this.selectedCourse || !this.deckBoardSelection || !this.deckStackSelection) {
+				return
+			}
+			try {
+				const course = await setCourseDeck(this.selectedCourse.id, {
+					deckBoardId: this.deckBoardSelection.value,
+					deckStackId: this.deckStackSelection.value,
+				})
+				this.upsertCourse(course)
+				showSuccess('Deck-Verknüpfung gespeichert.')
+			} catch (error) {
+				showError('Deck-Verknüpfung konnte nicht gespeichert werden.')
+			}
+		},
+		async createDeckCardFromLesson() {
+			if (!this.selectedCourse || !this.selectedLesson) {
+				return
+			}
+			const boardId = this.selectedCourse.deckBoardId
+			const stackId = this.selectedCourse.deckStackId
+			if (!boardId || !stackId) {
+				return
+			}
+			try {
+				await createDeckCard(boardId, stackId, {
+					title: this.selectedLesson.title,
+					type: 'plain',
+					order: 0,
+					description: this.selectedLesson.goal || this.selectedLesson.description || '',
+				})
+				showSuccess('Deck-Karte angelegt.')
+			} catch (error) {
+				showError('Deck-Karte konnte nicht angelegt werden.')
+			}
+		},
+		// ---- Planung als JSON ----
+		openPlanModal() {
+			this.planModalOpen = true
+			this.planImportText = ''
+			this.planPreview = null
+			this.planSource = 'json'
+			this.planFolderPath = ''
+		},
+		closePlanModal() {
+			this.planModalOpen = false
+		},
+		async downloadCoursePlan() {
+			if (!this.selectedCourse) {
+				return
+			}
+			try {
+				const { blob, fileName } = await exportCoursePlan(this.selectedCourse.id)
+				const url = window.URL.createObjectURL(blob)
+				const link = document.createElement('a')
+				link.href = url
+				link.download = fileName
+				document.body.appendChild(link)
+				link.click()
+				document.body.removeChild(link)
+				window.URL.revokeObjectURL(url)
+			} catch (error) {
+				showError('Planung konnte nicht exportiert werden.')
+			}
+		},
+		async copyCoursePlan() {
+			if (!this.selectedCourse) {
+				return
+			}
+			try {
+				const plan = await fetchCoursePlan(this.selectedCourse.id)
+				const text = JSON.stringify(plan, null, 2)
+				await navigator.clipboard.writeText(text)
+				showSuccess('Planung in die Zwischenablage kopiert.')
+			} catch (error) {
+				showError('Kopieren fehlgeschlagen.')
+			}
+		},
+		parsePlanInput() {
+			try {
+				return JSON.parse(this.planImportText)
+			} catch (error) {
+				return null
+			}
+		},
+		async checkPlan() {
+			if (!this.selectedCourse || !this.planImportText.trim()) {
+				return
+			}
+			const plan = this.parsePlanInput()
+			if (!plan) {
+				this.planSource = 'json'
+				this.planPreview = { valid: false, errors: ['Die eingefügte JSON ist nicht gültig (Syntaxfehler).'], lessons: [], summary: {} }
+				return
+			}
+			this.planChecking = true
+			this.planSource = 'json'
+			this.planFolderPath = ''
+			try {
+				this.planPreview = await previewCoursePlan(this.selectedCourse.id, plan)
+			} catch (error) {
+				this.planPreview = { valid: false, errors: ['Die Prüfung ist fehlgeschlagen.'], lessons: [], summary: {} }
+			} finally {
+				this.planChecking = false
+			}
+		},
+		async copyMarkdownExample() {
+			try {
+				await navigator.clipboard.writeText(this.markdownExample)
+				showSuccess('Beispiel kopiert. Als .md-Datei speichern und Datum/Slot anpassen.')
+			} catch (error) {
+				showError('Kopieren fehlgeschlagen.')
+			}
+		},
+		async copyAiPromptTemplate() {
+			try {
+				await navigator.clipboard.writeText(this.aiPromptTemplate)
+				showSuccess('KI-Prompt kopiert.')
+			} catch (error) {
+				showError('Kopieren fehlgeschlagen.')
+			}
+		},
+		async pickPlanFolder() {
+			if (!this.selectedCourse) {
+				return
+			}
+			let path
+			try {
+				const picker = getFilePickerBuilder('Ordner oder Markdown-Datei wählen')
+					.setMultiSelect(false)
+					.setMimeTypeFilter(['httpd/unix-directory', 'text/markdown', 'text/x-markdown', 'text/plain'])
+					.allowDirectories(true)
+					.setType(FilePickerType.Choose)
+					.build()
+				path = await picker.pick()
+			} catch (error) {
+				// User cancelled the picker.
+				return
+			}
+			if (!path) {
+				return
+			}
+			this.planFolderPath = path
+			this.planSource = 'folder'
+			this.planImportText = ''
+			this.planChecking = true
+			try {
+				this.planPreview = await previewPlanFromFolder(this.selectedCourse.id, path)
+			} catch (error) {
+				this.planPreview = { valid: false, errors: ['Der Ordner konnte nicht gelesen werden.'], lessons: [], summary: {} }
+			} finally {
+				this.planChecking = false
+			}
+		},
+		async runPlanImport() {
+			if (!this.selectedCourse || !this.planPreview || !this.planPreview.valid) {
+				return
+			}
+			this.planImporting = true
+			try {
+				let result
+				if (this.planSource === 'folder') {
+					result = await importPlanFromFolder(this.selectedCourse.id, this.planFolderPath)
+				} else {
+					const plan = this.parsePlanInput()
+					if (!plan) {
+						return
+					}
+					result = await importCoursePlan(this.selectedCourse.id, plan)
+				}
+				if (result?.course) {
+					this.upsertCourse(result.course)
+				}
+				const summary = result?.summary || {}
+				showSuccess(`Import: ${summary.lessonsCreated || 0} neu, ${summary.lessonsOverwritten || 0} überschrieben, ${summary.studentsImported || 0} Schüler:innen.`)
+				this.planImportText = ''
+				this.planFolderPath = ''
+				this.planPreview = null
+				this.planModalOpen = false
+			} catch (error) {
+				showError('Import fehlgeschlagen.')
+			} finally {
+				this.planImporting = false
 			}
 		},
 		openAttachmentPicker(itemId) {
@@ -1783,6 +3081,454 @@ export default {
 	padding-top: 0.25rem;
 }
 
+.item-card-wrapper {
+	border-radius: var(--border-radius-large, 12px);
+	transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.item-card-wrapper--dragging {
+	opacity: 0.55;
+}
+
+.item-card-wrapper--drop {
+	box-shadow: 0 0 0 2px var(--color-primary-element, #1a73e8);
+}
+
+.item-insert-divider {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	width: 100%;
+	padding: 0.45rem 0;
+	border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.15));
+	border-radius: var(--border-radius, 8px);
+	background: transparent;
+	color: var(--color-text-maxcontrast, #767676);
+	font-size: 0.85rem;
+	font-weight: 600;
+	cursor: pointer;
+	opacity: 0.8;
+	transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.item-insert-divider:hover,
+.item-insert-divider:focus-visible {
+	opacity: 1;
+	border-color: var(--color-primary-element, #1a73e8);
+	color: var(--color-primary-element, #1a73e8);
+	background: var(--color-background-hover, rgba(0, 0, 0, 0.04));
+}
+
+.item-insert-divider--end {
+	border-style: solid;
+}
+
+.item-list__empty {
+	margin: 0 0 0.25rem;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.item-insert-divider__icon {
+	width: 1rem;
+	height: 1rem;
+	fill: currentColor;
+}
+
+.item-form__drag-handle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	padding: 0.2rem;
+	color: var(--color-text-maxcontrast, #767676);
+	cursor: grab;
+}
+
+.item-form__drag-handle:active {
+	cursor: grabbing;
+}
+
+.link-list,
+.student-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	margin: 0.5rem 0;
+}
+
+.link-row,
+.student-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 1.2fr) minmax(120px, 1.4fr) minmax(0, auto) min-content;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.link-row > *,
+.student-row > * {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.link-add,
+.student-group-add,
+.student-import {
+	display: flex;
+	align-items: flex-end;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	margin-top: 0.75rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+}
+
+.student-row__groups {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.student-groups,
+.student-import {
+	margin-bottom: 0.5rem;
+}
+
+.student-group-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin: 0.5rem 0;
+}
+
+.student-group-chip {
+	display: flex;
+	align-items: flex-end;
+	gap: 0.25rem;
+}
+
+.deck-create,
+.plan-section {
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+}
+
+.plan-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+}
+
+.plan-hint {
+	margin: 0.25rem 0 0;
+	color: var(--color-text-maxcontrast, #767676);
+	font-size: 0.9rem;
+}
+
+.plan-path {
+	font-family: monospace;
+	font-size: 0.85rem;
+	color: var(--color-text-maxcontrast, #767676);
+	word-break: break-all;
+}
+
+.plan-help {
+	margin-top: 0.75rem;
+}
+
+.plan-help summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.plan-example {
+	margin: 0.5rem 0;
+	padding: 0.75rem;
+	border-radius: var(--border-radius, 8px);
+	background: var(--color-background-dark, rgba(0, 0, 0, 0.06));
+	font-size: 0.82rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-x: auto;
+}
+
+.participation-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 0.75rem 0;
+}
+
+.participation-row {
+	display: grid;
+	grid-template-columns: minmax(90px, 1fr) minmax(140px, 1fr) minmax(150px, 1.1fr) minmax(110px, 1.1fr);
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.grade-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.grade-button {
+	min-width: 2.1rem;
+	padding: 0.35rem 0.4rem;
+	border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
+	border-radius: 6px;
+	background: var(--color-main-background, #fff);
+	color: var(--color-main-text, #222);
+	font-weight: 700;
+	font-size: 0.85rem;
+	line-height: 1;
+	cursor: pointer;
+	transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.grade-button:hover {
+	border-color: var(--color-primary-element, #1a73e8);
+}
+
+.participation-row .grade-button--active,
+.participation-row .grade-button--active:hover,
+.participation-row .grade-button--active:focus,
+.participation-row .grade-button--active:active {
+	background: #1a73e8 !important;
+	border-color: #1a73e8 !important;
+	color: #fff !important;
+}
+
+.participation-grade-select {
+	width: 100%;
+	padding: 0.4rem 0.5rem;
+	border: 1px solid var(--color-border, rgba(0, 0, 0, 0.2));
+	border-radius: 6px;
+	background: var(--color-main-background, #fff);
+	color: var(--color-main-text, #222);
+	font: inherit;
+}
+
+.participation-no-scale {
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.participation-row > * {
+	min-width: 0;
+}
+
+.participation-cell-field {
+	min-width: 0;
+}
+
+/* NcSelect carries a default min-width that overflows the grid cell. */
+.participation-row .v-select {
+	min-width: 0;
+	width: 100%;
+}
+
+.participation-row .v-select .vs__dropdown-toggle {
+	min-width: 0;
+}
+
+.participation-row--head {
+	font-weight: 700;
+	font-size: 0.85rem;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.participation-row__name {
+	font-weight: 600;
+	word-break: break-word;
+}
+
+.participation-scale-info {
+	margin: 0.25rem 0 0.5rem;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.participation-table-wrap {
+	overflow-x: auto;
+	margin-top: 0.5rem;
+}
+
+.participation-table {
+	border-collapse: collapse;
+	width: 100%;
+	font-size: 0.88rem;
+}
+
+.participation-table th,
+.participation-table td {
+	border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+	padding: 0.3rem 0.35rem;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.participation-table thead th {
+	position: sticky;
+	top: 0;
+	background: var(--color-main-background, #fff);
+	z-index: 2;
+}
+
+.participation-table__name {
+	text-align: left;
+	position: sticky;
+	left: 0;
+	width: 150px;
+	min-width: 150px;
+	max-width: 150px;
+	white-space: normal;
+	word-break: break-word;
+	background: var(--color-main-background, #fff);
+	font-weight: 600;
+	z-index: 1;
+}
+
+.participation-table thead .participation-table__name--head {
+	z-index: 3;
+}
+
+.participation-table__avg {
+	position: sticky;
+	left: 150px;
+	width: 48px;
+	min-width: 48px;
+	background: var(--color-background-dark, #f5f5f5);
+	font-weight: 700;
+	z-index: 1;
+}
+
+.participation-table thead .participation-table__avg {
+	z-index: 3;
+}
+
+.participation-table__slot {
+	font-weight: 400;
+	color: var(--color-text-maxcontrast, #767676);
+	font-size: 0.72rem;
+}
+
+.participation-cell {
+	position: relative;
+	min-width: 2rem;
+	width: 2.4rem;
+}
+
+.participation-cell__note-btn {
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 14px;
+	height: 14px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: var(--color-primary-element, #1a73e8);
+	cursor: pointer;
+	line-height: 0;
+}
+
+.participation-cell__note-btn svg {
+	width: 14px;
+	height: 14px;
+	fill: currentColor;
+}
+
+.participation-cell__note-btn--active {
+	color: #b45309;
+}
+
+.participation-note-hint {
+	width: 1rem;
+	height: 1rem;
+	vertical-align: text-bottom;
+	fill: var(--color-primary-element, #1a73e8);
+}
+
+.participation-note-box {
+	margin: 0.5rem 0 0.75rem;
+	padding: 0.75rem 0.9rem;
+	border: 1px solid var(--color-border, rgba(0, 0, 0, 0.15));
+	border-left: 3px solid var(--color-primary-element, #1a73e8);
+	border-radius: 8px;
+	background: var(--color-background-hover, rgba(0, 0, 0, 0.03));
+}
+
+.participation-note-box__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.25rem;
+}
+
+.participation-note-box__close {
+	border: none;
+	background: transparent;
+	font-size: 1.3rem;
+	line-height: 1;
+	cursor: pointer;
+	color: var(--color-text-maxcontrast, #767676);
+}
+
+.participation-note-box p {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.participation-cell--present {
+	background: rgba(34, 197, 94, 0.12);
+}
+
+.participation-cell--excused {
+	background: rgba(245, 158, 11, 0.15);
+}
+
+.participation-cell--unexcused {
+	background: rgba(239, 68, 68, 0.15);
+}
+
+.plan-errors,
+.plan-lesson-list {
+	margin: 0.35rem 0 0;
+	padding-left: 1.2rem;
+}
+
+.plan-lesson-list {
+	list-style: none;
+	padding-left: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	margin-top: 0.5rem;
+}
+
+.plan-badge {
+	display: inline-block;
+	padding: 0.05rem 0.4rem;
+	border-radius: 999px;
+	font-size: 0.78rem;
+	font-weight: 700;
+	margin-right: 0.35rem;
+}
+
+.plan-badge--new {
+	background: rgba(34, 197, 94, 0.16);
+	color: #15803d;
+}
+
+.plan-badge--overwrite {
+	background: rgba(245, 158, 11, 0.18);
+	color: #b45309;
+}
+
 .item-card {
 	width: 100%;
 }
@@ -1902,7 +3648,21 @@ export default {
 }
 
 .details-panel__modebar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
 	margin-bottom: 0.85rem;
+}
+
+
+.live-mode-button.button-vue {
+	background-color: #f59e0b !important;
+	color: #fff !important;
+}
+
+.live-mode-button.button-vue:hover {
+	background-color: #d97706 !important;
 }
 
 .settings-panel__divider {

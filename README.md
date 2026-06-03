@@ -113,6 +113,21 @@ Imported and exported internal data includes:
 - lesson slots
 - element order
 
+## Plan import (Markdown & JSON)
+
+A course can also be filled from plain Markdown or JSON files – ideal for
+preparing lessons with any AI. Open `Planung importieren` inside a course to:
+
+- read one `.md` file per lesson from a Nextcloud folder (with `date`/`slot`
+  front matter and `## headings` as flow items), or
+- paste a full course as JSON.
+
+Lessons are merged by date + slot (matching lessons are overwritten, new ones
+created) and a preview is shown before importing. See
+[`docs/markdown-import.md`](docs/markdown-import.md) for the format, an AI prompt
+template, and how to embed links, images and files. Examples live in
+[`examples/`](examples/).
+
 ## Publishing
 
 The app publishes a static website via SFTP.

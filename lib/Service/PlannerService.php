@@ -21,9 +21,11 @@ class PlannerService {
 	 */
 	public function getBootstrap(string $userId): array {
 		$courses = $this->getCourses($userId);
-		$lessons = $this->getLessonsByCourse(array_column($courses, 'id'));
+		$courseIds = array_column($courses, 'id');
+		$lessons = $this->getLessonsByCourse($courseIds);
 		$items = $this->getItemsByLesson($this->flattenIds($lessons));
 		$attachments = $this->getAttachmentsByItem($this->flattenIds($items));
+		$links = $this->getLinksByCourse($courseIds);
 
 		foreach ($courses as &$course) {
 			$courseLessons = $lessons[$course['id']] ?? [];
@@ -37,6 +39,7 @@ class PlannerService {
 			}
 			unset($lesson);
 			$course['lessons'] = $courseLessons;
+			$course['links'] = $links[$course['id']] ?? [];
 		}
 		unset($course);
 
@@ -82,8 +85,39 @@ class PlannerService {
 		$query->update('schoolplanner_courses')
 			->set('name', $query->createNamedParameter(trim((string)($payload['name'] ?? '')) ?: 'Unbenannter Kurs'))
 			->set('description', $query->createNamedParameter((string)($payload['description'] ?? '')))
-			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
-			->where($query->expr()->eq('id', $query->createNamedParameter($courseId)))
+			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')));
+		if (array_key_exists('participationScale', $payload)) {
+			$query->set('participation_scale', $query->createNamedParameter($this->normalizeParticipationScale((string)$payload['participationScale'])));
+		}
+		$query->where($query->expr()->eq('id', $query->createNamedParameter($courseId)))
+			->executeStatement();
+
+		if (array_key_exists('deckBoardId', $payload) || array_key_exists('deckStackId', $payload)) {
+			$this->updateCourseDeck($userId, $courseId, $payload);
+		}
+
+		return $this->getCourse($userId, $courseId);
+	}
+
+	/**
+	 * Store the Deck board/stack a course is linked to (#2).
+	 *
+	 * @param array<string, mixed> $payload
+	 */
+	public function updateCourseDeck(string $userId, int $courseId, array $payload): array {
+		$this->assertCourseOwner($userId, $courseId);
+
+		$boardId = $payload['deckBoardId'] ?? null;
+		$stackId = $payload['deckStackId'] ?? null;
+		$boardId = ($boardId === null || $boardId === '' || (int)$boardId <= 0) ? null : (int)$boardId;
+		$stackId = ($stackId === null || $stackId === '' || (int)$stackId <= 0) ? null : (int)$stackId;
+
+		$query = $this->connection->getQueryBuilder();
+		$query->update('schoolplanner_courses')
+			->set('deck_board_id', $query->createNamedParameter($boardId, $boardId === null ? IQueryBuilder::PARAM_NULL : IQueryBuilder::PARAM_INT))
+			->set('deck_stack_id', $query->createNamedParameter($stackId, $stackId === null ? IQueryBuilder::PARAM_NULL : IQueryBuilder::PARAM_INT))
+			->set('updated_at', $query->createNamedParameter((new DateTimeImmutable())->format('Y-m-d H:i:s')))
+			->where($query->expr()->eq('id', $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT)))
 			->executeStatement();
 
 		return $this->getCourse($userId, $courseId);
@@ -335,6 +369,210 @@ class PlannerService {
 	}
 
 	/**
+	 * Persist a new order for the items of a lesson in one go.
+	 *
+	 * @param array<int|string> $itemIds Item ids in the desired order.
+	 * @return array<string, mixed>
+	 */
+	public function reorderLessonItems(string $userId, int $lessonId, array $itemIds): array {
+		$lesson = $this->getLesson($lessonId, $userId);
+		$validIds = array_map(static fn (array $item): int => (int)$item['id'], $lesson['items']);
+
+		$now = new DateTimeImmutable();
+		$order = 0;
+		foreach ($itemIds as $rawId) {
+			$itemId = (int)$rawId;
+			if (!in_array($itemId, $validIds, true)) {
+				continue;
+			}
+
+			$query = $this->connection->getQueryBuilder();
+			$query->update('schoolplanner_items')
+				->set('sort_order', $query->createNamedParameter($order, IQueryBuilder::PARAM_INT))
+				->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
+				->where($query->expr()->eq('id', $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT)))
+				->andWhere($query->expr()->eq('lesson_id', $query->createNamedParameter($lessonId, IQueryBuilder::PARAM_INT)))
+				->executeStatement();
+			$order++;
+		}
+
+		return $this->getLesson($lessonId, $userId);
+	}
+
+	/**
+	 * Move a single item into another lesson of the same course.
+	 *
+	 * @return array{item: array<string, mixed>, sourceLessonId: int, targetLessonId: int}
+	 */
+	public function moveItemToLesson(string $userId, int $itemId, int $targetLessonId): array {
+		$item = $this->getLessonItem($itemId, $userId);
+		$sourceLesson = $this->getLesson((int)$item['lessonId'], $userId);
+		$targetLesson = $this->getLesson($targetLessonId, $userId);
+
+		if ((int)$sourceLesson['courseId'] !== (int)$targetLesson['courseId']) {
+			throw new \InvalidArgumentException('Zielstunde gehört zu einem anderen Kurs.');
+		}
+
+		if ((int)$sourceLesson['id'] === $targetLessonId) {
+			return [
+				'item' => $item,
+				'sourceLessonId' => (int)$sourceLesson['id'],
+				'targetLessonId' => $targetLessonId,
+			];
+		}
+
+		$now = new DateTimeImmutable();
+		$query = $this->connection->getQueryBuilder();
+		$query->update('schoolplanner_items')
+			->set('lesson_id', $query->createNamedParameter($targetLessonId, IQueryBuilder::PARAM_INT))
+			->set('sort_order', $query->createNamedParameter($this->getNextItemSortOrder($targetLessonId), IQueryBuilder::PARAM_INT))
+			->set('is_current', $query->createNamedParameter(0, IQueryBuilder::PARAM_INT))
+			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
+			->where($query->expr()->eq('id', $query->createNamedParameter($itemId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
+
+		return [
+			'item' => $this->getLessonItem($itemId, $userId),
+			'sourceLessonId' => (int)$sourceLesson['id'],
+			'targetLessonId' => $targetLessonId,
+		];
+	}
+
+	/**
+	 * Central links of a course (#9).
+	 *
+	 * @param array<string, mixed> $payload
+	 * @return array<string, mixed>
+	 */
+	public function createCourseLink(string $userId, int $courseId, array $payload): array {
+		$this->assertCourseOwner($userId, $courseId);
+		$now = new DateTimeImmutable();
+
+		$query = $this->connection->getQueryBuilder();
+		$query->insert('sp_course_links')
+			->values([
+				'course_id' => $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT),
+				'label' => $query->createNamedParameter($this->normalizeLinkLabel($payload['label'] ?? '', $payload['url'] ?? '')),
+				'url' => $query->createNamedParameter($this->normalizeLinkUrl($payload['url'] ?? '')),
+				'sort_order' => $query->createNamedParameter($this->getNextLinkSortOrder($courseId), IQueryBuilder::PARAM_INT),
+				'created_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
+				'updated_at' => $query->createNamedParameter($now->format('Y-m-d H:i:s')),
+			])
+			->executeStatement();
+
+		return $this->getCourse($userId, $courseId);
+	}
+
+	/**
+	 * @param array<string, mixed> $payload
+	 * @return array<string, mixed>
+	 */
+	public function updateCourseLink(string $userId, int $linkId, array $payload): array {
+		$courseId = $this->getCourseIdForLink($userId, $linkId);
+		$now = new DateTimeImmutable();
+
+		$query = $this->connection->getQueryBuilder();
+		$query->update('sp_course_links')
+			->set('label', $query->createNamedParameter($this->normalizeLinkLabel($payload['label'] ?? '', $payload['url'] ?? '')))
+			->set('url', $query->createNamedParameter($this->normalizeLinkUrl($payload['url'] ?? '')))
+			->set('updated_at', $query->createNamedParameter($now->format('Y-m-d H:i:s')))
+			->where($query->expr()->eq('id', $query->createNamedParameter($linkId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
+
+		return $this->getCourse($userId, $courseId);
+	}
+
+	public function deleteCourseLink(string $userId, int $linkId): array {
+		$courseId = $this->getCourseIdForLink($userId, $linkId);
+
+		$query = $this->connection->getQueryBuilder();
+		$query->delete('sp_course_links')
+			->where($query->expr()->eq('id', $query->createNamedParameter($linkId, IQueryBuilder::PARAM_INT)))
+			->executeStatement();
+
+		return $this->getCourse($userId, $courseId);
+	}
+
+	private function getCourseIdForLink(string $userId, int $linkId): int {
+		$query = $this->connection->getQueryBuilder();
+		$result = $query->select('c.id')
+			->from('sp_course_links', 'cl')
+			->innerJoin('cl', 'schoolplanner_courses', 'c', 'cl.course_id = c.id')
+			->where($query->expr()->eq('cl.id', $query->createNamedParameter($linkId, IQueryBuilder::PARAM_INT)))
+			->andWhere($query->expr()->eq('c.user_id', $query->createNamedParameter($userId)))
+			->executeQuery();
+		$row = $result->fetch();
+		$result->closeCursor();
+		if (!$row) {
+			throw new DoesNotExistException('Link not found');
+		}
+		return (int)$row['id'];
+	}
+
+	private function getNextLinkSortOrder(int $courseId): int {
+		$query = $this->connection->getQueryBuilder();
+		$result = $query->selectAlias($query->createFunction('MAX(sort_order)'), 'max_sort_order')
+			->from('sp_course_links')
+			->where($query->expr()->eq('course_id', $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT)))
+			->executeQuery();
+		$row = $result->fetch();
+		$result->closeCursor();
+		return ((int)($row['max_sort_order'] ?? -1)) + 1;
+	}
+
+	private function normalizeLinkUrl(mixed $value): string {
+		$url = trim((string)$value);
+		if ($url === '') {
+			return '';
+		}
+		if (!preg_match('#^https?://#i', $url) && !str_starts_with($url, '/')) {
+			$url = 'https://' . $url;
+		}
+		return mb_substr($url, 0, 2000);
+	}
+
+	private function normalizeLinkLabel(mixed $label, mixed $url): string {
+		$label = trim((string)$label);
+		if ($label !== '') {
+			return mb_substr($label, 0, 255);
+		}
+		$fallback = trim((string)$url);
+		return mb_substr($fallback !== '' ? $fallback : 'Link', 0, 255);
+	}
+
+	/**
+	 * @param array<int> $courseIds
+	 * @return array<int, array<int, array<string, mixed>>>
+	 */
+	private function getLinksByCourse(array $courseIds): array {
+		if ($courseIds === []) {
+			return [];
+		}
+
+		$query = $this->connection->getQueryBuilder();
+		$result = $query->select('*')
+			->from('sp_course_links')
+			->where($query->expr()->in('course_id', $query->createNamedParameter($courseIds, IQueryBuilder::PARAM_INT_ARRAY)))
+			->orderBy('sort_order', 'ASC')
+			->addOrderBy('id', 'ASC')
+			->executeQuery();
+
+		$links = [];
+		while ($row = $result->fetch()) {
+			$links[(int)$row['course_id']][] = [
+				'id' => (int)$row['id'],
+				'courseId' => (int)$row['course_id'],
+				'label' => (string)$row['label'],
+				'url' => (string)$row['url'],
+				'sortOrder' => (int)($row['sort_order'] ?? 0),
+			];
+		}
+		$result->closeCursor();
+
+		return $links;
+	}
+
+	/**
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function getCourses(string $userId): array {
@@ -385,6 +623,7 @@ class PlannerService {
 		}
 		unset($lesson);
 		$course['lessons'] = $lessons;
+		$course['links'] = $this->getLinksByCourse([$courseId])[$courseId] ?? [];
 
 		return $course;
 	}
@@ -525,7 +764,11 @@ class PlannerService {
 			'description' => (string)($row['description'] ?? ''),
 			'publishSlug' => (string)$row['publish_slug'],
 			'publishedUrl' => $row['published_url'] ? (string)$row['published_url'] : null,
+			'deckBoardId' => isset($row['deck_board_id']) && $row['deck_board_id'] !== null ? (int)$row['deck_board_id'] : null,
+			'deckStackId' => isset($row['deck_stack_id']) && $row['deck_stack_id'] !== null ? (int)$row['deck_stack_id'] : null,
+			'participationScale' => (string)($row['participation_scale'] ?? ''),
 			'lessons' => [],
+			'links' => [],
 		];
 	}
 
@@ -563,6 +806,10 @@ class PlannerService {
 			'sortOrder' => (int)($row['sort_order'] ?? 0),
 			'attachments' => [],
 		];
+	}
+
+	private function normalizeParticipationScale(string $scale): string {
+		return in_array($scale, ['', 'scale3', 'scale5', 'note'], true) ? $scale : '';
 	}
 
 	private function slugify(string $value): string {
