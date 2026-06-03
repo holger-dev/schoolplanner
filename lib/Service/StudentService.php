@@ -75,7 +75,7 @@ class StudentService {
 		$courseId = $this->getCourseIdForStudent($userId, $studentId);
 
 		$memberQuery = $this->connection->getQueryBuilder();
-		$memberQuery->delete('sp_student_group_members')
+		$memberQuery->delete('sp_group_members')
 			->where($memberQuery->expr()->eq('student_id', $memberQuery->createNamedParameter($studentId, IQueryBuilder::PARAM_INT)))
 			->executeStatement();
 
@@ -160,7 +160,7 @@ class StudentService {
 		$courseId = $this->getCourseIdForGroup($userId, $groupId);
 
 		$memberQuery = $this->connection->getQueryBuilder();
-		$memberQuery->delete('sp_student_group_members')
+		$memberQuery->delete('sp_group_members')
 			->where($memberQuery->expr()->eq('group_id', $memberQuery->createNamedParameter($groupId, IQueryBuilder::PARAM_INT)))
 			->executeStatement();
 
@@ -194,7 +194,7 @@ class StudentService {
 		$validGroupIds = array_map(static fn (array $group): int => (int)$group['id'], $this->fetchGroups($courseId));
 
 		$deleteQuery = $this->connection->getQueryBuilder();
-		$deleteQuery->delete('sp_student_group_members')
+		$deleteQuery->delete('sp_group_members')
 			->where($deleteQuery->expr()->eq('student_id', $deleteQuery->createNamedParameter($studentId, IQueryBuilder::PARAM_INT)))
 			->executeStatement();
 
@@ -207,7 +207,7 @@ class StudentService {
 			$seen[$groupId] = true;
 
 			$insertQuery = $this->connection->getQueryBuilder();
-			$insertQuery->insert('sp_student_group_members')
+			$insertQuery->insert('sp_group_members')
 				->values([
 					'group_id' => $insertQuery->createNamedParameter($groupId, IQueryBuilder::PARAM_INT),
 					'student_id' => $insertQuery->createNamedParameter($studentId, IQueryBuilder::PARAM_INT),
@@ -271,7 +271,7 @@ class StudentService {
 	private function fetchMemberships(int $courseId): array {
 		$query = $this->connection->getQueryBuilder();
 		$result = $query->select('m.student_id', 'm.group_id')
-			->from('sp_student_group_members', 'm')
+			->from('sp_group_members', 'm')
 			->innerJoin('m', 'sp_students', 's', 'm.student_id = s.id')
 			->where($query->expr()->eq('s.course_id', $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT)))
 			->executeQuery();

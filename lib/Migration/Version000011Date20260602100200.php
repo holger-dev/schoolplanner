@@ -38,8 +38,8 @@ class Version000011Date20260602100200 extends SimpleMigrationStep {
 			$table->addIndex(['course_id'], 'sp_student_groups_course_idx');
 		}
 
-		if (!$schema->hasTable('sp_student_group_members')) {
-			$table = $schema->createTable('sp_student_group_members');
+		if (!$schema->hasTable('sp_group_members')) {
+			$table = $schema->createTable('sp_group_members');
 			$table->addColumn('id', 'integer', ['autoincrement' => true, 'unsigned' => true, 'notnull' => true]);
 			$table->addColumn('group_id', 'integer', ['unsigned' => true, 'notnull' => true]);
 			$table->addColumn('student_id', 'integer', ['unsigned' => true, 'notnull' => true]);
