@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\SchoolPlanner\AppInfo;
 
-require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
+$schoolplannerAutoload = dirname(__DIR__, 2) . '/vendor/autoload.php';
+if (is_file($schoolplannerAutoload)) {
+	require_once $schoolplannerAutoload;
+}
 
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;

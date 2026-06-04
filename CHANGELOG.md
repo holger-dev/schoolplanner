@@ -4,6 +4,20 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.2.1] – 2026-06-04
+
+### Behoben
+- **Upgrade-Absturz auf Nextcloud 32/33**: Die Tabelle `sp_student_group_members`
+  erzeugte einen zu langen Primärschlüssel-Namen (`oc_sp_student_group_members_pkey`,
+  32 Zeichen > NC-Limit von 30) und ließ die Migration – und damit das
+  App-Upgrade – fehlschlagen. Tabelle umbenannt zu `sp_group_members`.
+- Bootstrap härter: `vendor/autoload.php` wird nur noch geladen, wenn die Datei
+  existiert, damit ein unvollständiges Paket nicht die ganze Instanz lahmlegt.
+
+### Hinweis
+- Es gehen keine Daten verloren: Die Migration brach vor dem Anlegen der Tabellen
+  ab. Nach dem Update auf 1.2.1 laufen die Migrationen sauber durch.
+
 ## [1.2.0] – 2026-06-03
 
 ### Hinzugefügt
