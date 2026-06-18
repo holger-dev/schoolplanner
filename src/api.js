@@ -208,6 +208,16 @@ export const fetchParticipationOverview = async (courseId) => {
 	return data
 }
 
+export const exportPresentations = async () => {
+	const response = await axios.get(generateUrl('/apps/schoolplanner/api/presentations'), {
+		responseType: 'blob',
+	})
+	return {
+		blob: response.data,
+		fileName: response.headers['content-disposition']?.match(/filename="?([^"]+)"?/)?.[1] || 'Schoolplanner.zip',
+	}
+}
+
 // #8 Planung als JSON (Export / Vorschau / Import)
 export const exportCoursePlan = async (courseId) => {
 	const response = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/plan`), {

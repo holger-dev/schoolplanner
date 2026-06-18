@@ -4,6 +4,31 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.2.3] – 2026-06-04
+
+### Hinzugefügt
+- **Export als ODF-Präsentationen (alle Kurse auf einmal)**: Ein Button
+  „Planung als ODP herunterladen" im Einstellungs-Menü (links). Ein Klick
+  erzeugt ein einziges ZIP `Schoolplanner_<Datum_Zeit>.zip` mit je einem Ordner
+  pro Kurs; darin pro Stunde eine `.odp`-Präsentation (Titelfolie + eine Folie je
+  Ablauf-Element) im dunklen Design der Webseite, plus alle hochgeladenen Dateien
+  – benannt nach der zugehörigen Stunde (`<stunde>__<datei>`). Ohne Server/SFTP.
+
+## [1.2.2] – 2026-06-04
+
+### Hinzugefügt
+- **SFTP-Zielverzeichnis** in den Einstellungen (z. B. `html`): Veröffentlichte
+  Dateien landen nun im gewählten Verzeichnis statt zwingend im Server-Root.
+  Relative Pfade werden vom SFTP-Login-Verzeichnis aus aufgelöst – damit
+  funktioniert das Publishing auf Hostern wie Uberspace.
+- **Optionales SFTP-Host-Feld**: Falls der SFTP-Host nicht der Webadresse
+  entspricht (z. B. `user.uber.space`), lässt er sich jetzt separat angeben.
+  Leer = wie bisher aus der Webadresse abgeleitet.
+
+### Behoben
+- Verzeichnisanlage auf dem Server respektiert relative Zielpfade (legte vorher
+  immer absolute Pfade ab Server-Wurzel an).
+
 ## [1.2.1] – 2026-06-04
 
 ### Behoben

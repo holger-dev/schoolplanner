@@ -115,7 +115,10 @@ class PublishService {
 	 * @return array<string, mixed>
 	 */
 	private function buildSite(array $settings, array $course, array $allCourses): array {
-		$remoteRoot = '';
+		// Optional target directory on the server (e.g. "html" on Uberspace).
+		// Empty = server root (previous behaviour). Relative paths are resolved
+		// from the SFTP login directory (usually the user's home).
+		$remoteRoot = rtrim(trim($settings['sftpRemotePath'] ?? ''), '/');
 		$publicRoot = rtrim(trim($settings['publicBaseUrl']), '/');
 		$courseRoot = $remoteRoot . '/courses/' . $course['publishSlug'];
 		$coursePublicUrl = $publicRoot . '/courses/' . $course['publishSlug'] . '/';
@@ -550,10 +553,22 @@ class PublishService {
 	}
 
 	private function ensureDirectory(SFTP $sftp, string $directory): void {
-		$segments = array_filter(explode('/', trim($directory, '/')));
+		$directory = rtrim($directory, '/');
+		if ($directory === '' || $directory === '.') {
+			return;
+		}
+
+		// Preserve whether the path is absolute (from server root) or relative
+		// (from the SFTP login directory), so a configured "html" target works.
+		$absolute = str_starts_with($directory, '/');
+		$segments = array_values(array_filter(
+			explode('/', ltrim($directory, '/')),
+			static fn (string $segment): bool => $segment !== ''
+		));
+
 		$path = '';
 		foreach ($segments as $segment) {
-			$path .= '/' . $segment;
+			$path = $path === '' ? ($absolute ? '/' . $segment : $segment) : $path . '/' . $segment;
 			if (!$sftp->is_dir($path) && !$sftp->mkdir($path)) {
 				throw new \RuntimeException('Verzeichnis konnte nicht angelegt werden: ' . $path);
 			}

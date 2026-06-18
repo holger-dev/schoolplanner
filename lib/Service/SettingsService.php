@@ -11,6 +11,7 @@ class SettingsService {
 		'sftp_host',
 		'sftp_username',
 		'sftp_password',
+		'sftp_remote_path',
 		'public_base_url',
 	];
 

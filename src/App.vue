@@ -20,6 +20,7 @@
 			<template #list>
 				<NcButton class="nav-action-button" wide @click="openBlockPlannerModal">Blockansicht</NcButton>
 				<NcButton class="nav-action-button" wide @click="handlePublishAllCourses">Planung veröffentlichen</NcButton>
+				<NcButton class="nav-action-button" wide :disabled="presentationsExporting" @click="downloadAllPresentations">{{ presentationsExporting ? 'Erstelle ODP-ZIP …' : 'Planung als ODP herunterladen' }}</NcButton>
 				<NcAppNavigationNew text="Kurs anlegen" @click="openCreateCourseModal" />
 
 				<NcAppNavigationItem
@@ -43,6 +44,10 @@
 							label="Webadresse"
 							placeholder="https://school.heidkamp.dev/" />
 						<NcTextField
+							v-model="settingsDraft.sftpHost"
+							label="SFTP-Host (optional)"
+							placeholder="leer = aus Webadresse, z. B. user.uber.space" />
+						<NcTextField
 							v-model="settingsDraft.sftpUsername"
 							label="SFTP-Benutzername"
 							placeholder="deploy" />
@@ -51,6 +56,10 @@
 							label="SFTP-Passwort"
 							type="password"
 							placeholder="Passwort" />
+						<NcTextField
+							v-model="settingsDraft.sftpRemotePath"
+							label="Ziel-Verzeichnis (optional)"
+							placeholder="z. B. html – leer = Server-Wurzel" />
 						<NcButton type="primary" @click="persistSettings">Speichern</NcButton>
 						<div class="settings-panel__divider" />
 						<div class="settings-panel__actions">
@@ -1040,6 +1049,7 @@ import {
 	fetchParticipation,
 	saveParticipation,
 	fetchParticipationOverview,
+	exportPresentations,
 	exportCoursePlan,
 	fetchCoursePlan,
 	previewCoursePlan,
@@ -1166,11 +1176,14 @@ export default {
 			exportModalOpen: false,
 			exportCourseIds: [],
 			settingsDraft: {
+				sftpHost: '',
 				sftpUsername: '',
 				sftpPassword: '',
+				sftpRemotePath: '',
 				publicBaseUrl: '',
 			},
 			publishInProgress: false,
+			presentationsExporting: false,
 			uploadState: {
 				active: false,
 				fileName: '',
@@ -1415,8 +1428,10 @@ export default {
 			const bootstrap = await fetchBootstrap()
 			this.courses = bootstrap.courses || []
 			this.settingsDraft = {
+				sftpHost: bootstrap.settings?.sftpHost || '',
 				sftpUsername: bootstrap.settings?.sftpUsername || '',
 				sftpPassword: bootstrap.settings?.sftpPassword || '',
+				sftpRemotePath: bootstrap.settings?.sftpRemotePath || '',
 				publicBaseUrl: bootstrap.settings?.publicBaseUrl || '',
 			}
 			if (this.courses[0]) {
@@ -2552,6 +2567,24 @@ export default {
 		closePlanModal() {
 			this.planModalOpen = false
 		},
+		async downloadAllPresentations() {
+			this.presentationsExporting = true
+			try {
+				const { blob, fileName } = await exportPresentations()
+				const url = window.URL.createObjectURL(blob)
+				const link = document.createElement('a')
+				link.href = url
+				link.download = fileName
+				document.body.appendChild(link)
+				link.click()
+				document.body.removeChild(link)
+				window.URL.revokeObjectURL(url)
+			} catch (error) {
+				showError('Präsentationen konnten nicht erstellt werden.')
+			} finally {
+				this.presentationsExporting = false
+			}
+		},
 		async downloadCoursePlan() {
 			if (!this.selectedCourse) {
 				return
@@ -2731,10 +2764,12 @@ export default {
 		async persistSettings() {
 			try {
 				const normalizedUrl = this.normalizeBaseUrl(this.settingsDraft.publicBaseUrl)
+				const host = (this.settingsDraft.sftpHost || '').trim() || this.extractHost(normalizedUrl)
 				this.settingsDraft = await saveSettings({
-					sftpHost: this.extractHost(normalizedUrl),
+					sftpHost: host,
 					sftpUsername: this.settingsDraft.sftpUsername,
 					sftpPassword: this.settingsDraft.sftpPassword,
+					sftpRemotePath: (this.settingsDraft.sftpRemotePath || '').trim(),
 					publicBaseUrl: normalizedUrl,
 				})
 				showSuccess('Einstellungen gespeichert.')

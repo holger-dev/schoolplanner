@@ -31,6 +31,7 @@ return [
 		['name' => 'api#getParticipation', 'url' => '/api/lessons/{lessonId}/participation', 'verb' => 'GET'],
 		['name' => 'api#saveParticipation', 'url' => '/api/lessons/{lessonId}/participation', 'verb' => 'POST'],
 		['name' => 'api#getParticipationOverview', 'url' => '/api/courses/{courseId}/participation', 'verb' => 'GET'],
+		['name' => 'api#exportPresentations', 'url' => '/api/presentations', 'verb' => 'GET'],
 		['name' => 'api#getStudents', 'url' => '/api/courses/{courseId}/students', 'verb' => 'GET'],
 		['name' => 'api#createStudent', 'url' => '/api/courses/{courseId}/students', 'verb' => 'POST'],
 		['name' => 'api#importStudents', 'url' => '/api/courses/{courseId}/students/import', 'verb' => 'POST'],

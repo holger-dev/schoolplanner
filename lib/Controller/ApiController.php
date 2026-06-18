@@ -11,6 +11,7 @@ use OCA\SchoolPlanner\Service\JsonPlanService;
 use OCA\SchoolPlanner\Service\MarkdownImportService;
 use OCA\SchoolPlanner\Service\ParticipationService;
 use OCA\SchoolPlanner\Service\PlannerService;
+use OCA\SchoolPlanner\Service\PresentationExportService;
 use OCA\SchoolPlanner\Service\PublishService;
 use OCA\SchoolPlanner\Service\SettingsService;
 use OCA\SchoolPlanner\Service\StudentService;
@@ -34,6 +35,7 @@ class ApiController extends Controller {
 		private JsonPlanService $jsonPlanService,
 		private MarkdownImportService $markdownImportService,
 		private ParticipationService $participationService,
+		private PresentationExportService $presentationExportService,
 	) {
 		parent::__construct(Application::APP_ID, $request);
 	}
@@ -371,6 +373,14 @@ class ApiController extends Controller {
 		return new DataResponse(
 			$this->markdownImportService->import($this->getUserId(), $courseId, (string)($payload['path'] ?? ''))
 		);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function exportPresentations(): DataDownloadResponse {
+		$archive = $this->presentationExportService->exportAll($this->getUserId());
+		return new DataDownloadResponse($archive['content'], $archive['fileName'], 'application/zip');
 	}
 
 	/**
