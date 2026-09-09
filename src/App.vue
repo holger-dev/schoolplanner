@@ -19,8 +19,10 @@
 		<NcAppNavigation aria-label="Kurse">
 			<template #list>
 				<NcButton class="nav-action-button" wide @click="openBlockPlannerModal">Blockansicht</NcButton>
+				<NcButton class="nav-action-button" wide @click="openDeckCardModal">Deckkarte anlegen</NcButton>
 				<NcButton class="nav-action-button" wide @click="handlePublishAllCourses">Planung veröffentlichen</NcButton>
 				<NcButton class="nav-action-button" wide :disabled="presentationsExporting" @click="downloadAllPresentations">{{ presentationsExporting ? 'Erstelle ODP-ZIP …' : 'Planung als ODP herunterladen' }}</NcButton>
+				<NcButton class="nav-action-button" wide :disabled="syncChecking" @click="openSyncModal">{{ syncChecking ? 'Prüfe MD-Dateien …' : 'MD-Files aktualisieren' }}</NcButton>
 				<NcAppNavigationNew text="Kurs anlegen" @click="openCreateCourseModal" />
 
 				<NcAppNavigationItem
@@ -60,6 +62,28 @@
 							v-model="settingsDraft.sftpRemotePath"
 							label="Ziel-Verzeichnis (optional)"
 							placeholder="z. B. html – leer = Server-Wurzel" />
+						<div class="settings-panel__divider" />
+						<strong>Deck-Standard</strong>
+						<p v-if="settingsDeckError" class="settings-panel__hint">
+							{{ settingsDeckError }}
+							<NcButton @click="reloadDeckSettings">Erneut laden</NcButton>
+						</p>
+						<NcSelect
+							v-model="settingsDeckBoardSelection"
+							:options="deckBoardOptions"
+							input-label="Board"
+							label="label"
+							track-by="value"
+							placeholder="Board auswählen"
+							@update:model-value="onSettingsDeckBoardChange" />
+						<NcSelect
+							v-model="settingsDeckStackSelection"
+							:options="settingsDeckStackOptions"
+							input-label="Liste / Stack"
+							label="label"
+							track-by="value"
+							placeholder="Liste auswählen"
+							:disabled="settingsDeckStackOptions.length === 0" />
 						<NcButton type="primary" @click="persistSettings">Speichern</NcButton>
 						<div class="settings-panel__divider" />
 						<div class="settings-panel__actions">
@@ -114,7 +138,6 @@
 							<NcActionSeparator />
 							<NcActionCaption name="Material & Tools" />
 							<NcActionButton :close-after-click="true" @click="openLinksModal">Wichtige Links</NcActionButton>
-							<NcActionButton :close-after-click="true" @click="openDeckModal">Deck</NcActionButton>
 							<NcActionSeparator />
 							<NcActionButton :close-after-click="true" @click="handlePublishCourse">Makroplanung veröffentlichen</NcActionButton>
 							<NcActionButton :close-after-click="true" @click="confirmRemoveCourse">Kurs löschen</NcActionButton>
@@ -418,6 +441,18 @@
 					label="label"
 					track-by="value"
 					:clearable="false" />
+				<div class="course-md-binding">
+					<strong>Angebundene Markdown-Datei</strong>
+					<p class="plan-hint">
+						Wähle die .md-Datei im Kurs-Ordner. Über „MD-Files aktualisieren" (links)
+						werden daraus die Stunden aktualisiert – inkl. verlinkter Bilder und Dateien aus demselben Ordner.
+					</p>
+					<div class="plan-actions">
+						<NcButton @click="pickCourseMarkdownFile">Datei wählen</NcButton>
+						<NcButton v-if="courseDraft.mdFilePath" @click="courseDraft.mdFilePath = ''">Entfernen</NcButton>
+						<span class="plan-path">{{ courseDraft.mdFilePath || 'keine Datei angebunden' }}</span>
+					</div>
+				</div>
 				<div class="dialog-actions">
 					<NcButton @click="closeCourseModal">Abbrechen</NcButton>
 					<NcButton type="primary" @click="submitCourseModal">{{ courseDraft.id ? 'Speichern' : 'Kurs anlegen' }}</NcButton>
@@ -591,6 +626,63 @@
 			</div>
 		</NcModal>
 
+		<NcModal v-if="syncModalOpen" size="large" name="MD-Files aktualisieren" @close="closeSyncModal">
+			<div class="dialog-body">
+				<div class="dialog-header">
+					<h2>MD-Files aktualisieren</h2>
+					<p>Vorschau für alle Kurse mit angebundener Markdown-Datei. Stunden werden über Datum + Slot zusammengeführt; der Veröffentlicht-Status bestehender Elemente bleibt erhalten.</p>
+				</div>
+
+				<p v-if="syncPreviewData && syncPreviewData.courses.length === 0">
+					Kein Kurs hat bisher eine Markdown-Datei angebunden. Das stellst du in den Kurseinstellungen ein.
+				</p>
+
+				<div v-for="entry in (syncPreviewData ? syncPreviewData.courses : [])" :key="entry.courseId" class="plan-section">
+					<strong>{{ entry.courseName }}</strong>
+					<p class="plan-path">{{ entry.path }}</p>
+
+					<NcNoteCard v-if="entry.errors && entry.errors.length" type="error">
+						<ul class="plan-errors">
+							<li v-for="(err, i) in entry.errors" :key="`e-${entry.courseId}-${i}`">{{ err }}</li>
+						</ul>
+					</NcNoteCard>
+
+					<template v-else>
+						<NcNoteCard type="success">
+							{{ entry.summary.new }} neu · {{ entry.summary.overwrite }} werden aktualisiert
+						</NcNoteCard>
+						<ul class="plan-lesson-list">
+							<li v-for="(lesson, i) in entry.lessons" :key="`l-${entry.courseId}-${i}`">
+								<span class="plan-badge" :class="lesson.status === 'overwrite' ? 'plan-badge--overwrite' : 'plan-badge--new'">
+									{{ lesson.status === 'overwrite' ? 'aktualisieren' : 'neu' }}
+								</span>
+								{{ lesson.date }} · {{ lesson.slot }}. Std. · {{ lesson.title }}
+							</li>
+						</ul>
+
+						<div v-if="entry.obsolete && entry.obsolete.length" class="sync-obsolete">
+							<p class="plan-hint">Diese Stunden gibt es in der App, aber nicht mehr in der MD-Datei. Anhaken = löschen:</p>
+							<NcCheckboxRadioSwitch
+								v-for="lesson in entry.obsolete"
+								:key="`o-${lesson.lessonId}`"
+								:model-value="syncDeleteIds.includes(lesson.lessonId)"
+								type="checkbox"
+								@update:model-value="toggleSyncDelete(lesson.lessonId, $event)">
+								{{ lesson.date }} · {{ lesson.slot }}. Std. · {{ lesson.title }}
+							</NcCheckboxRadioSwitch>
+						</div>
+					</template>
+				</div>
+
+				<div class="dialog-actions">
+					<NcButton @click="closeSyncModal">Abbrechen</NcButton>
+					<NcButton type="primary" :disabled="syncApplying || !syncPreviewData" @click="applySync">
+						{{ syncApplying ? 'Übernehme …' : 'Übernehmen' }}
+					</NcButton>
+				</div>
+			</div>
+		</NcModal>
+
 		<NcModal v-if="participationModalOpen" size="large" name="Mitarbeit erfassen" @close="closeParticipationModal">
 			<div class="dialog-body">
 				<div class="dialog-header">
@@ -714,11 +806,11 @@
 			</div>
 		</NcModal>
 
-		<NcModal v-if="deckModalOpen" size="normal" name="Deck" @close="closeDeckModal">
+		<NcModal v-if="deckModalOpen" size="normal" name="Deckkarte anlegen" @close="closeDeckModal">
 			<div class="dialog-body">
 				<div class="dialog-header">
-					<h2>Deck-Anbindung</h2>
-					<p>Verknüpfe diesen Kurs mit einem Deck-Board und lege Aufgaben aus Stunden an.</p>
+					<h2>Deckkarte anlegen</h2>
+					<p>Board und Liste sind mit deinen Einstellungen vorbelegt und lassen sich hier überschreiben.</p>
 				</div>
 
 				<NcNoteCard v-if="deckError" type="error">{{ deckError }}</NcNoteCard>
@@ -739,15 +831,27 @@
 					track-by="value"
 					placeholder="Liste auswählen"
 					:disabled="deckStackOptions.length === 0" />
-				<div class="dialog-actions">
-					<NcButton @click="closeDeckModal">Schließen</NcButton>
-					<NcButton type="primary" :disabled="!deckBoardSelection || !deckStackSelection" @click="saveDeckSelection">Verknüpfung speichern</NcButton>
-				</div>
 
-				<div v-if="selectedCourse && selectedCourse.deckBoardId && selectedCourse.deckStackId" class="deck-create">
-					<strong>Aufgabe anlegen</strong>
-					<p>Erzeugt eine Deck-Karte aus der aktuell gewählten Stunde.</p>
-					<NcButton :disabled="!selectedLesson" @click="createDeckCardFromLesson">Aktuelle Stunde als Karte anlegen</NcButton>
+				<NcTextField
+					ref="deckTitleField"
+					v-model="deckCardDraft.title"
+					label="Titel"
+					placeholder="z. B. Arbeitsblätter kopieren" />
+				<NcTextArea v-model="deckCardDraft.description" label="Text" resize="vertical" placeholder="Details zur Aufgabe (optional)" />
+				<NcDateTimePickerNative
+					:model-value="deckCardDueDate"
+					label="Fälligkeitsdatum (optional)"
+					type="date"
+					@update:model-value="deckCardDueDate = $event" />
+
+				<div class="dialog-actions">
+					<NcButton @click="closeDeckModal">Abbrechen</NcButton>
+					<NcButton
+						type="primary"
+						:disabled="deckSaving || !deckBoardSelection || !deckStackSelection || !deckCardDraft.title.trim()"
+						@click="submitDeckCard">
+						{{ deckSaving ? 'Lege an …' : 'Karte anlegen' }}
+					</NcButton>
 				</div>
 			</div>
 		</NcModal>
@@ -799,6 +903,10 @@
 						<p class="plan-hint">
 							Links: <code>[Text](URL)</code> · Bilder: <code>![Alt](URL)</code> ·
 							Dateien: als Link auf eine Freigabe. Hochgeladene Datei-Anhänge fügst du nach dem Import am Element hinzu.
+						</p>
+						<p class="plan-hint">
+							Interne Lehrer-Hinweise: Zeile mit <code>Hinweis:</code> beginnen – landet im Feld
+							„Hinweise für Lehrer:in" statt im Schüler-Text.
 						</p>
 						<pre class="plan-example">{{ markdownExample }}</pre>
 						<div class="plan-actions">
@@ -891,7 +999,7 @@
 			</div>
 		</NcModal>
 
-		<NcModal v-if="liveModeModalOpen" size="large" name="Live-Modus" @close="closeLiveModeModal">
+		<NcModal v-if="liveModeModalOpen" size="full" name="Live-Modus" @close="closeLiveModeModal">
 			<div class="dialog-body live-mode-modal">
 				<div class="dialog-header">
 					<h2>Live-Modus</h2>
@@ -1034,7 +1142,6 @@ import {
 	createCourseLink,
 	updateCourseLink,
 	deleteCourseLink,
-	setCourseDeck,
 	fetchDeckBoards,
 	fetchDeckStacks,
 	createDeckCard,
@@ -1050,6 +1157,8 @@ import {
 	saveParticipation,
 	fetchParticipationOverview,
 	exportPresentations,
+	syncMarkdownPreview,
+	syncMarkdownApply,
 	exportCoursePlan,
 	fetchCoursePlan,
 	previewCoursePlan,
@@ -1112,6 +1221,12 @@ export default {
 			deckBoardSelection: null,
 			deckStackSelection: null,
 			deckError: '',
+			deckSaving: false,
+			deckCardDraft: { title: '', description: '', dueDate: '' },
+			settingsDeckBoardSelection: null,
+			settingsDeckStackSelection: null,
+			settingsDeckStacks: [],
+			settingsDeckError: '',
 			planModalOpen: false,
 			planImportText: '',
 			planPreview: null,
@@ -1129,6 +1244,7 @@ export default {
 				'',
 				'## Warm-up',
 				'Was ist eine Variable? Beispiele sammeln.',
+				'Hinweis: Nur 5 Minuten – interner Lehrerhinweis.',
 				'',
 				'## Übung',
 				'Schreibt ein erstes Skript.',
@@ -1139,6 +1255,7 @@ export default {
 				'Danach optional eine kurze Beschreibung, dann je Ablaufschritt eine ## Überschrift mit Inhalt.',
 				'Mehrere Stunden einfach untereinander (jede beginnt wieder mit date:).',
 				'Links als [Text](URL), Bilder als ![Alt](URL).',
+				'Interne Lehrer-Hinweise als eigene Zeile mit "Hinweis: ..." (nicht für SuS sichtbar).',
 				'Thema: «… dein Thema …». Rahmen: «… Anzahl Stunden, Klassenstufe …».',
 			].join('\n'),
 			courseModalOpen: false,
@@ -1146,8 +1263,14 @@ export default {
 				id: null,
 				name: '',
 				description: '',
+				mdFilePath: '',
 				participationScaleSelection: { label: 'Keine Note', value: '' },
 			},
+			syncModalOpen: false,
+			syncPreviewData: null,
+			syncChecking: false,
+			syncApplying: false,
+			syncDeleteIds: [],
 			confirmModalOpen: false,
 			confirmDialog: {
 				action: null,
@@ -1181,6 +1304,8 @@ export default {
 				sftpPassword: '',
 				sftpRemotePath: '',
 				publicBaseUrl: '',
+				deckBoardId: '',
+				deckStackId: '',
 			},
 			publishInProgress: false,
 			presentationsExporting: false,
@@ -1255,6 +1380,19 @@ export default {
 		},
 		deckStackOptions() {
 			return this.deckStacks.map((stack) => ({ label: stack.title, value: stack.id }))
+		},
+		settingsDeckStackOptions() {
+			return this.settingsDeckStacks.map((stack) => ({ label: stack.title, value: stack.id }))
+		},
+		deckCardDueDate: {
+			get() {
+				return this.deckCardDraft.dueDate ? new Date(`${this.deckCardDraft.dueDate}T00:00:00`) : null
+			},
+			set(value) {
+				this.deckCardDraft.dueDate = value instanceof Date
+					? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+					: ''
+			},
 		},
 		scaleOptions() {
 			return [
@@ -1433,11 +1571,14 @@ export default {
 				sftpPassword: bootstrap.settings?.sftpPassword || '',
 				sftpRemotePath: bootstrap.settings?.sftpRemotePath || '',
 				publicBaseUrl: bootstrap.settings?.publicBaseUrl || '',
+				deckBoardId: bootstrap.settings?.deckBoardId || '',
+				deckStackId: bootstrap.settings?.deckStackId || '',
 			}
 			if (this.courses[0]) {
 				this.selectCourse(this.courses[0].id)
 			}
 			this.jumpToCurrentBlockWeek()
+			this.loadDeckSettingsSelection()
 		},
 		selectCourse(courseId) {
 			this.selectedCourseId = courseId
@@ -1474,6 +1615,7 @@ export default {
 				id: course.id,
 				name: course.name,
 				description: course.description || '',
+				mdFilePath: course.mdFilePath || '',
 				participationScaleSelection: this.scaleOptions.find((option) => option.value === (course.participationScale || '')) || this.scaleOptions[0],
 			}
 			this.courseModalOpen = true
@@ -1483,9 +1625,26 @@ export default {
 				id: null,
 				name: '',
 				description: '',
+				mdFilePath: '',
 				participationScaleSelection: this.scaleOptions[0],
 			}
 			this.courseModalOpen = true
+		},
+		async pickCourseMarkdownFile() {
+			try {
+				const picker = getFilePickerBuilder('Markdown-Datei des Kurses wählen')
+					.setMultiSelect(false)
+					.setMimeTypeFilter(['text/markdown', 'text/x-markdown', 'text/plain'])
+					.allowDirectories(false)
+					.setType(FilePickerType.Choose)
+					.build()
+				const path = await picker.pick()
+				if (path) {
+					this.courseDraft.mdFilePath = path
+				}
+			} catch (error) {
+				// Auswahl abgebrochen
+			}
 		},
 		openCopyLessonModal() {
 			this.copyLessonDraft = {
@@ -1552,6 +1711,7 @@ export default {
 			return {
 				name: this.courseDraft.name,
 				description: this.courseDraft.description,
+				mdFilePath: this.courseDraft.mdFilePath || '',
 				participationScale: this.courseDraft.participationScaleSelection?.value || '',
 			}
 		},
@@ -2475,32 +2635,52 @@ export default {
 			}
 			return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(`${value}T00:00:00`))
 		},
-		// ---- #2 Deck ----
-		async openDeckModal() {
-			if (!this.selectedCourse) {
-				return
+		// ---- Deck: eine Karte anlegen (global) ----
+		async ensureDeckBoards() {
+			if (this.deckBoards.length === 0) {
+				this.deckBoards = await fetchDeckBoards()
 			}
-			this.deckModalOpen = true
+			return this.deckBoards
+		},
+		async openDeckCardModal() {
 			this.deckError = ''
+			this.deckStacks = []
 			this.deckBoardSelection = null
 			this.deckStackSelection = null
-			this.deckStacks = []
+			this.deckCardDraft = { title: '', description: '', dueDate: '' }
+			this.deckModalOpen = true
+
 			try {
-				this.deckBoards = await fetchDeckBoards()
-				if (this.selectedCourse.deckBoardId) {
-					const board = this.deckBoards.find((entry) => entry.id === this.selectedCourse.deckBoardId)
-					if (board) {
-						this.deckBoardSelection = { label: board.title, value: board.id }
-						await this.loadDeckStacks(board.id)
-						const stack = this.deckStacks.find((entry) => entry.id === this.selectedCourse.deckStackId)
-						if (stack) {
-							this.deckStackSelection = { label: stack.title, value: stack.id }
-						}
+				await this.ensureDeckBoards()
+				// Vorbelegung aus den Einstellungen
+				const boardId = Number.parseInt(this.settingsDraft.deckBoardId, 10)
+				const stackId = Number.parseInt(this.settingsDraft.deckStackId, 10)
+				const board = this.deckBoards.find((entry) => entry.id === boardId)
+				if (board) {
+					this.deckBoardSelection = { label: board.title, value: board.id }
+					await this.loadDeckStacks(board.id)
+					const stack = this.deckStacks.find((entry) => entry.id === stackId)
+					if (stack) {
+						this.deckStackSelection = { label: stack.title, value: stack.id }
 					}
 				}
 			} catch (error) {
 				this.deckError = 'Die Deck-App ist nicht erreichbar oder nicht installiert.'
 			}
+
+			this.focusDeckTitle()
+		},
+		focusDeckTitle() {
+			// Der Focus-Trap des Modals greift asynchron – deshalb verzögert setzen.
+			this.$nextTick(() => {
+				window.setTimeout(() => {
+					const input = this.$refs.deckTitleField?.$el?.querySelector('input')
+					if (input) {
+						input.focus()
+						input.select?.()
+					}
+				}, 80)
+			})
 		},
 		closeDeckModal() {
 			this.deckModalOpen = false
@@ -2520,40 +2700,79 @@ export default {
 				await this.loadDeckStacks(selection.value)
 			}
 		},
-		async saveDeckSelection() {
-			if (!this.selectedCourse || !this.deckBoardSelection || !this.deckStackSelection) {
+		async submitDeckCard() {
+			if (!this.deckBoardSelection || !this.deckStackSelection || !this.deckCardDraft.title.trim()) {
 				return
 			}
+			this.deckSaving = true
 			try {
-				const course = await setCourseDeck(this.selectedCourse.id, {
-					deckBoardId: this.deckBoardSelection.value,
-					deckStackId: this.deckStackSelection.value,
-				})
-				this.upsertCourse(course)
-				showSuccess('Deck-Verknüpfung gespeichert.')
-			} catch (error) {
-				showError('Deck-Verknüpfung konnte nicht gespeichert werden.')
-			}
-		},
-		async createDeckCardFromLesson() {
-			if (!this.selectedCourse || !this.selectedLesson) {
-				return
-			}
-			const boardId = this.selectedCourse.deckBoardId
-			const stackId = this.selectedCourse.deckStackId
-			if (!boardId || !stackId) {
-				return
-			}
-			try {
-				await createDeckCard(boardId, stackId, {
-					title: this.selectedLesson.title,
+				const payload = {
+					title: this.deckCardDraft.title.trim(),
 					type: 'plain',
 					order: 0,
-					description: this.selectedLesson.goal || this.selectedLesson.description || '',
-				})
+					description: this.deckCardDraft.description || '',
+				}
+				if (this.deckCardDraft.dueDate) {
+					// Deck erwartet ISO-8601
+					payload.duedate = new Date(`${this.deckCardDraft.dueDate}T12:00:00`).toISOString()
+				}
+				await createDeckCard(this.deckBoardSelection.value, this.deckStackSelection.value, payload)
 				showSuccess('Deck-Karte angelegt.')
+				this.deckModalOpen = false
 			} catch (error) {
 				showError('Deck-Karte konnte nicht angelegt werden.')
+			} finally {
+				this.deckSaving = false
+			}
+		},
+		async onSettingsDeckBoardChange(selection) {
+			this.settingsDeckStackSelection = null
+			this.settingsDeckStacks = []
+			this.settingsDeckError = ''
+			if (selection?.value) {
+				try {
+					this.settingsDeckStacks = await fetchDeckStacks(selection.value)
+				} catch (error) {
+					showError('Listen des Boards konnten nicht geladen werden.')
+				}
+			}
+		},
+		async reloadDeckSettings() {
+			this.deckBoards = []
+			this.settingsDeckError = ''
+			await this.loadDeckSettingsSelection()
+		},
+		async loadDeckSettingsSelection() {
+			try {
+				// Boards immer laden, damit die Auswahl auch ohne gespeicherte Einstellung gefüllt ist.
+				await this.ensureDeckBoards()
+				this.settingsDeckError = this.deckBoards.length === 0
+					? 'Es wurden keine Deck-Boards gefunden.'
+					: ''
+			} catch (error) {
+				this.settingsDeckError = 'Die Deck-App ist nicht erreichbar oder nicht installiert.'
+				return
+			}
+
+			const boardId = Number.parseInt(this.settingsDraft.deckBoardId, 10)
+			const stackId = Number.parseInt(this.settingsDraft.deckStackId, 10)
+			if (!boardId) {
+				return
+			}
+			const board = this.deckBoards.find((entry) => entry.id === boardId)
+			if (!board) {
+				return
+			}
+			this.settingsDeckBoardSelection = { label: board.title, value: board.id }
+			try {
+				this.settingsDeckStacks = await fetchDeckStacks(board.id)
+			} catch (error) {
+				this.settingsDeckStacks = []
+				return
+			}
+			const stack = this.settingsDeckStacks.find((entry) => entry.id === stackId)
+			if (stack) {
+				this.settingsDeckStackSelection = { label: stack.title, value: stack.id }
 			}
 		},
 		// ---- Planung als JSON ----
@@ -2566,6 +2785,48 @@ export default {
 		},
 		closePlanModal() {
 			this.planModalOpen = false
+		},
+		async openSyncModal() {
+			this.syncChecking = true
+			this.syncDeleteIds = []
+			this.syncPreviewData = null
+			try {
+				this.syncPreviewData = await syncMarkdownPreview()
+				this.syncModalOpen = true
+			} catch (error) {
+				showError('Vorschau konnte nicht erstellt werden.')
+			} finally {
+				this.syncChecking = false
+			}
+		},
+		closeSyncModal() {
+			this.syncModalOpen = false
+		},
+		toggleSyncDelete(lessonId, checked) {
+			const ids = new Set(this.syncDeleteIds)
+			if (checked) {
+				ids.add(lessonId)
+			} else {
+				ids.delete(lessonId)
+			}
+			this.syncDeleteIds = [...ids]
+		},
+		async applySync() {
+			this.syncApplying = true
+			try {
+				const result = await syncMarkdownApply(this.syncDeleteIds)
+				const s = result?.summary || {}
+				await this.loadBootstrap()
+				showSuccess(`Aktualisiert: ${s.created || 0} neu, ${s.overwritten || 0} aktualisiert, ${s.deleted || 0} gelöscht.`)
+				if (result?.errors?.length) {
+					showError(result.errors[0])
+				}
+				this.syncModalOpen = false
+			} catch (error) {
+				showError('Aktualisierung fehlgeschlagen.')
+			} finally {
+				this.syncApplying = false
+			}
 		},
 		async downloadAllPresentations() {
 			this.presentationsExporting = true
@@ -2771,6 +3032,12 @@ export default {
 					sftpPassword: this.settingsDraft.sftpPassword,
 					sftpRemotePath: (this.settingsDraft.sftpRemotePath || '').trim(),
 					publicBaseUrl: normalizedUrl,
+					deckBoardId: this.settingsDeckBoardSelection
+						? String(this.settingsDeckBoardSelection.value)
+						: (this.settingsDraft.deckBoardId || ''),
+					deckStackId: this.settingsDeckStackSelection
+						? String(this.settingsDeckStackSelection.value)
+						: (this.settingsDraft.deckStackId || ''),
 				})
 				showSuccess('Einstellungen gespeichert.')
 			} catch (error) {
@@ -3242,7 +3509,6 @@ export default {
 	gap: 0.25rem;
 }
 
-.deck-create,
 .plan-section {
 	margin-top: 1rem;
 	padding-top: 1rem;
@@ -3268,6 +3534,20 @@ export default {
 	font-size: 0.85rem;
 	color: var(--color-text-maxcontrast, #767676);
 	word-break: break-all;
+}
+
+.course-md-binding {
+	margin-top: 1rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+}
+
+.sync-obsolete {
+	margin-top: 0.6rem;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid rgba(245, 158, 11, 0.4);
+	border-radius: 8px;
+	background: rgba(245, 158, 11, 0.08);
 }
 
 .plan-help {
@@ -3704,6 +3984,15 @@ export default {
 	width: 100%;
 	height: 1px;
 	background: var(--color-border);
+}
+
+.settings-panel__hint {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 0;
+	font-size: 0.85rem;
+	color: var(--color-text-maxcontrast);
 }
 
 .settings-panel__actions {

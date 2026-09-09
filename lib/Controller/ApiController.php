@@ -98,15 +98,6 @@ class ApiController extends Controller {
 	/**
 	 * @NoAdminRequired
 	 */
-	public function setCourseDeck(int $courseId): DataResponse {
-		return new DataResponse(
-			$this->plannerService->updateCourseDeck($this->getUserId(), $courseId, $this->getJsonBody())
-		);
-	}
-
-	/**
-	 * @NoAdminRequired
-	 */
 	public function createCourseLink(int $courseId): DataResponse {
 		return new DataResponse(
 			$this->plannerService->createCourseLink($this->getUserId(), $courseId, $this->getJsonBody()),
@@ -373,6 +364,22 @@ class ApiController extends Controller {
 		return new DataResponse(
 			$this->markdownImportService->import($this->getUserId(), $courseId, (string)($payload['path'] ?? ''))
 		);
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function syncMarkdownPreview(): DataResponse {
+		return new DataResponse($this->markdownImportService->syncPreview($this->getUserId()));
+	}
+
+	/**
+	 * @NoAdminRequired
+	 */
+	public function syncMarkdownApply(): DataResponse {
+		$payload = $this->getJsonBody();
+		$ids = is_array($payload['deleteLessonIds'] ?? null) ? $payload['deleteLessonIds'] : [];
+		return new DataResponse($this->markdownImportService->syncApply($this->getUserId(), $ids));
 	}
 
 	/**

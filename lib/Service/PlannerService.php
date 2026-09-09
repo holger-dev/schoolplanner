@@ -89,35 +89,10 @@ class PlannerService {
 		if (array_key_exists('participationScale', $payload)) {
 			$query->set('participation_scale', $query->createNamedParameter($this->normalizeParticipationScale((string)$payload['participationScale'])));
 		}
-		$query->where($query->expr()->eq('id', $query->createNamedParameter($courseId)))
-			->executeStatement();
-
-		if (array_key_exists('deckBoardId', $payload) || array_key_exists('deckStackId', $payload)) {
-			$this->updateCourseDeck($userId, $courseId, $payload);
+		if (array_key_exists('mdFilePath', $payload)) {
+			$query->set('md_file_path', $query->createNamedParameter(mb_substr(trim((string)$payload['mdFilePath']), 0, 1024)));
 		}
-
-		return $this->getCourse($userId, $courseId);
-	}
-
-	/**
-	 * Store the Deck board/stack a course is linked to (#2).
-	 *
-	 * @param array<string, mixed> $payload
-	 */
-	public function updateCourseDeck(string $userId, int $courseId, array $payload): array {
-		$this->assertCourseOwner($userId, $courseId);
-
-		$boardId = $payload['deckBoardId'] ?? null;
-		$stackId = $payload['deckStackId'] ?? null;
-		$boardId = ($boardId === null || $boardId === '' || (int)$boardId <= 0) ? null : (int)$boardId;
-		$stackId = ($stackId === null || $stackId === '' || (int)$stackId <= 0) ? null : (int)$stackId;
-
-		$query = $this->connection->getQueryBuilder();
-		$query->update('schoolplanner_courses')
-			->set('deck_board_id', $query->createNamedParameter($boardId, $boardId === null ? IQueryBuilder::PARAM_NULL : IQueryBuilder::PARAM_INT))
-			->set('deck_stack_id', $query->createNamedParameter($stackId, $stackId === null ? IQueryBuilder::PARAM_NULL : IQueryBuilder::PARAM_INT))
-			->set('updated_at', $query->createNamedParameter((new DateTimeImmutable())->format('Y-m-d H:i:s')))
-			->where($query->expr()->eq('id', $query->createNamedParameter($courseId, IQueryBuilder::PARAM_INT)))
+		$query->where($query->expr()->eq('id', $query->createNamedParameter($courseId)))
 			->executeStatement();
 
 		return $this->getCourse($userId, $courseId);
@@ -764,9 +739,8 @@ class PlannerService {
 			'description' => (string)($row['description'] ?? ''),
 			'publishSlug' => (string)$row['publish_slug'],
 			'publishedUrl' => $row['published_url'] ? (string)$row['published_url'] : null,
-			'deckBoardId' => isset($row['deck_board_id']) && $row['deck_board_id'] !== null ? (int)$row['deck_board_id'] : null,
-			'deckStackId' => isset($row['deck_stack_id']) && $row['deck_stack_id'] !== null ? (int)$row['deck_stack_id'] : null,
 			'participationScale' => (string)($row['participation_scale'] ?? ''),
+			'mdFilePath' => (string)($row['md_file_path'] ?? ''),
 			'lessons' => [],
 			'links' => [],
 		];

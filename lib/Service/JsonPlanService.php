@@ -178,10 +178,13 @@ class JsonPlanService {
 				'reflection' => (string)($lesson['reflection'] ?? ''),
 			];
 
+			$preserved = [];
 			if (isset($existing[$key])) {
 				$lessonId = (int)$existing[$key]['id'];
 				$this->plannerService->updateLesson($userId, $lessonId, $fields);
-				$this->clearLessonItems($userId, $lessonId);
+				// Remember publish/current state so a re-import does not silently
+				// unpublish everything the teacher already released.
+				$preserved = $this->clearLessonItems($userId, $lessonId);
 				$overwritten++;
 			} else {
 				$createdLesson = $this->plannerService->createLesson($userId, $courseId, $fields);
@@ -190,7 +193,7 @@ class JsonPlanService {
 				$created++;
 			}
 
-			$this->createItems($userId, $lessonId, is_array($lesson['items'] ?? null) ? $lesson['items'] : []);
+			$this->createItems($userId, $lessonId, is_array($lesson['items'] ?? null) ? $lesson['items'] : [], $preserved);
 		}
 
 		$this->importLinks($userId, $courseId, $parsed['links']);
@@ -209,30 +212,75 @@ class JsonPlanService {
 	/**
 	 * @param array<int, array<string, mixed>> $items
 	 */
-	private function createItems(string $userId, int $lessonId, array $items): void {
+	private function createItems(string $userId, int $lessonId, array $items, array $preserved = []): void {
 		$order = 0;
 		foreach ($items as $item) {
 			if (!is_array($item)) {
 				continue;
 			}
-			$this->plannerService->createLessonItem($userId, $lessonId, [
-				'title' => mb_substr(trim((string)($item['title'] ?? '')) ?: 'Element', 0, 255),
+			$title = mb_substr(trim((string)($item['title'] ?? '')) ?: 'Element', 0, 255);
+			$state = $preserved[$this->itemKey($title)] ?? null;
+
+			$created = $this->plannerService->createLessonItem($userId, $lessonId, [
+				'title' => $title,
 				'description' => (string)($item['description'] ?? ''),
 				'teacherNote' => (string)($item['teacherNote'] ?? ''),
-				'published' => (bool)($item['published'] ?? false),
-				'isCurrent' => false,
+				// Keep whatever the element had before the re-import.
+				'published' => $state !== null ? (bool)$state['published'] : (bool)($item['published'] ?? false),
+				'isCurrent' => $state !== null ? (bool)$state['isCurrent'] : false,
 				'sortOrder' => $order,
 			]);
+
+			$this->attachFiles($userId, (int)$created['id'], is_array($item['files'] ?? null) ? $item['files'] : []);
 			$order++;
 		}
 	}
 
-	private function clearLessonItems(string $userId, int $lessonId): void {
+	/**
+	 * Deletes the current items of a lesson and returns their publish state,
+	 * keyed by title, so it can be restored for re-imported elements.
+	 *
+	 * @return array<string, array{published: bool, isCurrent: bool}>
+	 */
+	private function clearLessonItems(string $userId, int $lessonId): array {
 		$lesson = $this->plannerService->getLesson($lessonId, $userId);
+		$state = [];
 		foreach ($lesson['items'] ?? [] as $item) {
 			$itemId = (int)$item['id'];
+			$state[$this->itemKey((string)$item['title'])] = [
+				'published' => (bool)($item['published'] ?? false),
+				'isCurrent' => (bool)($item['isCurrent'] ?? false),
+			];
 			$this->attachmentService->deleteAttachmentsForItem($userId, $itemId);
 			$this->plannerService->deleteLessonItem($userId, $itemId);
+		}
+		return $state;
+	}
+
+	private function itemKey(string $title): string {
+		return mb_strtolower(trim($title));
+	}
+
+	/**
+	 * Attaches files that were referenced relatively in the Markdown source.
+	 *
+	 * @param array<int, array{name: string, content: string, mime?: string}> $files
+	 */
+	private function attachFiles(string $userId, int $itemId, array $files): void {
+		foreach ($files as $file) {
+			if (!is_array($file) || trim((string)($file['name'] ?? '')) === '') {
+				continue;
+			}
+			try {
+				$this->attachmentService->createAttachmentFromContent(
+					$itemId,
+					(string)$file['name'],
+					(string)($file['content'] ?? ''),
+					(string)($file['mime'] ?? 'application/octet-stream')
+				);
+			} catch (\Throwable $exception) {
+				// A single broken file must not abort the whole import.
+			}
 		}
 	}
 

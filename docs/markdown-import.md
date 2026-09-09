@@ -53,6 +53,22 @@ Regeln für den Text darunter:
 - Jede **`## Überschrift`** wird zu einem Ablauf-Element. Die Überschrift ist der
   Titel des Elements, der Text darunter (Markdown) sein Inhalt.
 
+### Interne Hinweise für Lehrer:innen
+
+Zeilen, die mit `Hinweis:` (oder `Lehrer:`, `Lehrerhinweis:`, `Note:`) beginnen,
+landen **nicht** im Schüler-Text, sondern im internen Feld „Hinweise für
+Lehrer:in" des jeweiligen Elements. Ein vorangestelltes `>` oder `-` ist erlaubt.
+
+```markdown
+## Warm-up
+Was ist eine Variable? Beispiele sammeln.
+Hinweis: Nur 5 Minuten, sonst wird es zu lang.
+```
+
+Steht so eine Zeile **vor** dem ersten `##`, landet sie im internen Feld „Fazit
+der Stunde". Alternativ lässt sich das Fazit auch als Kopfzeile setzen:
+`reflection:` bzw. `fazit:`.
+
 **Mehrere Stunden pro Datei** sind erlaubt: Schreib einfach die nächste Stunde
 darunter – jede neue Stunde beginnt wieder mit einer `date:`-Zeile.
 
@@ -97,16 +113,64 @@ Auf Dateien verlinkst du wie auf normale Links – z. B. auf eine Nextcloud-Frei
 [Arbeitsblatt (PDF)](https://cloud.example.org/s/abVariablen)
 ```
 
-Hinweis zu **echten Datei-Anhängen**: Der Markdown-/JSON-Import überträgt Text,
-Links und Bild-URLs. Hochgeladene Datei-Anhänge an einem Element (der
-„Datei hochladen"-Button im Editor) sind echte Uploads und werden **nicht** über
-den Import befüllt – die fügst du nach dem Import direkt am Element hinzu, oder
-du verlinkst die Datei wie oben per Markdown.
+Hinweis zu **echten Datei-Anhängen**: Absolute URLs bleiben einfache Links. Wenn
+du dagegen **relativ** auf eine Datei im selben Ordner wie die `.md` verweist
+(`![Schaubild](schaubild.png)`, `[Arbeitsblatt](ab.pdf)`), wird sie beim Import
+als **echter Anhang** am Element angelegt – siehe „Bilder und Dateien aus dem
+Kurs-Ordner". Beim JSON-Import (ohne Ordner) werden nur Text, Links und
+Bild-URLs übertragen; Anhänge fügst du dort nach dem Import am Element hinzu.
 
 ### Wichtige Links pro Kurs
 
 Unabhängig von einzelnen Stunden kannst du zentrale Kurs-Links über
 **Wichtige Links** pflegen (im JSON-Export stehen sie unter `course.links`).
+
+## Kurs-Ordner mit MD-Datei verknüpfen (empfohlener Workflow)
+
+Lege pro Kurs einen Ordner in der Nextcloud an mit **einer** `.md`-Datei und
+allen zugehörigen Dateien (Bilder, PDFs …). Dann:
+
+1. **Kurseinstellungen** öffnen → „Angebundene Markdown-Datei" → Datei wählen.
+2. Datei beliebig bearbeiten (gern mit einer KI) und Dateien in denselben Ordner legen.
+3. Links **„MD-Files aktualisieren"** klicken → Vorschau über **alle** angebundenen
+   Kurse → prüfen → **Übernehmen**.
+
+Dabei gilt:
+
+- Stunden werden über **Datum + Slot** zusammengeführt: gleiche Kombination wird
+  aktualisiert, neue wird angelegt.
+- **Der Veröffentlicht-Status bleibt erhalten.** Elemente, die du schon
+  freigegeben hast, werden beim erneuten Import nicht zurückgesetzt (Abgleich
+  über den Element-Titel).
+- Stunden, die in der App existieren, aber nicht mehr in der MD-Datei stehen,
+  werden **nicht automatisch gelöscht** – sie erscheinen in der Vorschau zum
+  Anhaken.
+
+### Bilder und Dateien aus dem Kurs-Ordner
+
+Verlinkst du relativ auf eine Datei im selben Ordner, wird sie beim Import als
+**echter Anhang** übernommen und beim Veröffentlichen mit hochgeladen:
+
+```markdown
+![Schaubild](schaubild.png)
+[Arbeitsblatt](ab-variablen.pdf)
+```
+
+Relative Links werden beim Veröffentlichen automatisch auf den richtigen
+Asset-Pfad umgeschrieben – Bilder erscheinen also direkt auf der Schüler-Seite.
+Absolute URLs (`https://…`) bleiben unverändert.
+
+### Tabellen
+
+Markdown-Tabellen werden unterstützt und auf der veröffentlichten Seite sauber
+formatiert:
+
+```markdown
+| Zeit | Phase   | Material |
+|------|---------|----------|
+| 5'   | Einstieg| Beamer   |
+| 20'  | Übung   | AB 1     |
+```
 
 ## Mit einer KI arbeiten
 
@@ -116,7 +180,10 @@ Du kannst jeder KI dieses Format beschreiben. Eine Vorlage zum Kopieren:
 > Zeilen `date: JJJJ-MM-TT` und `slot:` (1–8), optional `title` und `goal`. Danach
 > optional eine kurze Beschreibung, dann je Ablaufschritt eine `## Überschrift` mit
 > Inhalt. Mehrere Stunden einfach untereinander (jede beginnt wieder mit `date:`).
-> Links als `[Text](URL)`, Bilder als `![Alt](URL)`.
+> Links als `[Text](URL)`, Bilder als `![Alt](URL)`. Dateien im selben Ordner
+> relativ verlinken (`![Alt](bild.png)`), sie werden als Anhang übernommen.
+> Interne Notizen für mich als Lehrkraft als eigene Zeile mit `Hinweis: …` –
+> die erscheinen nicht im Schüler-Text. Markdown-Tabellen sind erlaubt.
 > Thema: «… dein Thema …», «… Anzahl Stunden, Klassenstufe, Rahmen …».
 
 Speichere die erzeugten Dateien in einem Nextcloud-Ordner und lies sie im Kurs
@@ -143,7 +210,12 @@ Ein vollständiges Beispiel liegt unter [`examples/`](../examples/).
         "goal": "…",
         "description": "Markdown … mit [Link](https://…) und ![Bild](https://…)",
         "items": [
-          { "title": "Warm-up", "description": "Markdown …", "published": false }
+          {
+            "title": "Warm-up",
+            "description": "Markdown …",
+            "teacherNote": "Nur intern sichtbar",
+            "published": false
+          }
         ]
       }
     ]

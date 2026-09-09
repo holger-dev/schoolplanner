@@ -128,12 +128,7 @@ export const deleteCourseLink = async (linkId) => {
 	return data
 }
 
-// #2 Deck-Anbindung
-export const setCourseDeck = async (courseId, payload) => {
-	const { data } = await axios.put(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/deck`), payload, { headers: jsonHeaders })
-	return data
-}
-
+// Deck-Anbindung (global, über die Einstellungen vorbelegt)
 export const fetchDeckBoards = async () => {
 	const { data } = await axios.get(generateUrl('/apps/deck/api/v1.0/boards'), { headers: { 'OCS-APIRequest': 'true' } })
 	return Array.isArray(data) ? data : []
@@ -205,6 +200,16 @@ export const saveParticipation = async (lessonId, scale, entries) => {
 
 export const fetchParticipationOverview = async (courseId) => {
 	const { data } = await axios.get(generateUrl(`/apps/schoolplanner/api/courses/${courseId}/participation`))
+	return data
+}
+
+export const syncMarkdownPreview = async () => {
+	const { data } = await axios.post(generateUrl('/apps/schoolplanner/api/markdown-sync/preview'), {}, { headers: jsonHeaders })
+	return data
+}
+
+export const syncMarkdownApply = async (deleteLessonIds = []) => {
+	const { data } = await axios.post(generateUrl('/apps/schoolplanner/api/markdown-sync/apply'), { deleteLessonIds }, { headers: jsonHeaders })
 	return data
 }
 

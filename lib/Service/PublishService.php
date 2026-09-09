@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\ExternalLink\ExternalLinkExtension;
+use League\CommonMark\Extension\Table\TableExtension;
 use League\CommonMark\MarkdownConverter;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
@@ -393,6 +394,12 @@ class PublishService {
 			. '.copy h1,.copy h2,.copy h3,.copy h4{font-family:Calibri,Candara,"Segoe UI",Arial,sans-serif;line-height:1.18;margin:1.15em 0 .45em;font-weight:700;}'
 			. '.copy ul,.copy ol{padding-left:1.3rem;}'
 			. '.copy blockquote{margin:1rem 0;padding:0 0 0 1rem;border-left:4px solid rgba(56,189,248,.45);color:var(--page-muted);}'
+			. '.copy table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.96rem;background:rgba(10,16,29,.5);border:1px solid rgba(39,53,80,.9);border-radius:8px;overflow:hidden;}'
+			. '.copy table th,.copy table td{padding:.6rem .8rem;border-bottom:1px solid rgba(39,53,80,.8);text-align:left;vertical-align:top;}'
+			. '.copy table th{background:rgba(56,189,248,.12);color:#cfe9fb;font-weight:700;border-bottom:2px solid rgba(56,189,248,.35);}'
+			. '.copy table tr:last-child td{border-bottom:0;}'
+			. '.copy table tbody tr:nth-child(even){background:rgba(56,189,248,.04);}'
+			. '.copy .table-scroll{overflow-x:auto;}'
 			. '.copy pre{position:relative;background:#0a1020;color:#dbeafe;padding:1rem 1.1rem;border-radius:8px;overflow:auto;border:1px solid #25324c;box-shadow:none;}'
 			. '.copy code{background:#17233a;padding:.12rem .36rem;border-radius:4px;font-size:.95em;}'
 			. '.copy pre code{background:transparent;padding:0;color:inherit;}'
@@ -426,7 +433,7 @@ class PublishService {
 			return '<article class="published-item' . ((bool)($item['isCurrent'] ?? false) ? ' published-item--current' : '') . '">'
 				. ((bool)($item['isCurrent'] ?? false) ? '<span class="status-badge">Hier sind wir</span>' : '')
 				. '<h3>' . $this->escape($item['title']) . '</h3>'
-				. '<div class="published-item__body"><div class="copy">' . $this->renderMarkdown($item['description']) . '</div>'
+				. '<div class="published-item__body"><div class="copy">' . $this->renderMarkdown($this->resolveLocalRefs((string)$item['description'], $item, $assetBasePath)) . '</div>'
 				. ($attachmentLinks === [] ? '' : '<ul class="attachment-list">' . implode('', $attachmentLinks) . '</ul>')
 				. '</div>'
 				. '</article>';
@@ -502,6 +509,35 @@ class PublishService {
 		return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}
 
+	/**
+	 * Rewrites relative links/images (e.g. "grafik.png" from the course folder)
+	 * to the published asset path of the matching attachment, so images show up
+	 * inline and files stay downloadable.
+	 *
+	 * @param array<string, mixed> $item
+	 */
+	private function resolveLocalRefs(string $markdown, array $item, string $assetBasePath): string {
+		$attachments = $item['attachments'] ?? [];
+		if ($attachments === []) {
+			return $markdown;
+		}
+
+		$map = [];
+		foreach ($attachments as $attachment) {
+			$name = (string)$attachment['fileName'];
+			$map[mb_strtolower($name)] = $assetBasePath . '/item-' . (int)$item['id'] . '/' . rawurlencode($name);
+		}
+
+		return preg_replace_callback('/(!?\[[^\]]*\]\()\s*([^)\s]+)/', static function (array $match) use ($map): string {
+			$ref = trim($match[2], "<>\"'");
+			if ($ref === '' || str_starts_with($ref, '#') || str_starts_with($ref, '/') || preg_match('#^[a-z][a-z0-9+.\-]*:#i', $ref)) {
+				return $match[0];
+			}
+			$key = mb_strtolower(rawurldecode(basename($ref)));
+			return isset($map[$key]) ? $match[1] . $map[$key] : $match[0];
+		}, $markdown) ?? $markdown;
+	}
+
 	private function renderMarkdown(string $value): string {
 		if ($this->markdownConverter === null) {
 			$environment = new Environment([
@@ -517,6 +553,7 @@ class PublishService {
 			]);
 			$environment->addExtension(new CommonMarkCoreExtension());
 			$environment->addExtension(new ExternalLinkExtension());
+			$environment->addExtension(new TableExtension());
 			$this->markdownConverter = new MarkdownConverter($environment);
 		}
 

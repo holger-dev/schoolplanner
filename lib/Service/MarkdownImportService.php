@@ -35,7 +35,115 @@ class MarkdownImportService {
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private JsonPlanService $jsonPlanService,
+		private PlannerService $plannerService,
 	) {
+	}
+
+	/**
+	 * Preview what a sync of all courses with a bound Markdown file would do.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function syncPreview(string $userId): array {
+		$result = [];
+
+		foreach ($this->plannerService->getBootstrap($userId)['courses'] as $course) {
+			$path = trim((string)($course['mdFilePath'] ?? ''));
+			if ($path === '') {
+				continue;
+			}
+
+			$entry = [
+				'courseId' => (int)$course['id'],
+				'courseName' => (string)$course['name'],
+				'path' => $path,
+				'lessons' => [],
+				'obsolete' => [],
+				'errors' => [],
+				'valid' => false,
+				'summary' => ['new' => 0, 'overwrite' => 0],
+			];
+
+			try {
+				$build = $this->buildPlanFromPath($userId, $path);
+				$preview = $this->jsonPlanService->previewCoursePlan($userId, (int)$course['id'], $build['plan']);
+
+				$entry['errors'] = array_merge($build['errors'], $preview['errors']);
+				$entry['valid'] = $entry['errors'] === [];
+				$entry['lessons'] = $preview['lessons'];
+				$entry['summary'] = $preview['summary'];
+
+				// Lessons that exist in the app but no longer in the Markdown file.
+				$known = [];
+				foreach ($build['plan']['course']['lessons'] as $lesson) {
+					$known[(string)$lesson['date'] . '#' . (int)$lesson['slot']] = true;
+				}
+				foreach ((array)($course['lessons'] ?? []) as $lesson) {
+					$key = (string)$lesson['lessonDate'] . '#' . (int)$lesson['lessonSlot'];
+					if (!isset($known[$key])) {
+						$entry['obsolete'][] = [
+							'lessonId' => (int)$lesson['id'],
+							'date' => (string)$lesson['lessonDate'],
+							'slot' => (int)$lesson['lessonSlot'],
+							'title' => (string)$lesson['title'],
+						];
+					}
+				}
+			} catch (\Throwable $exception) {
+				$entry['errors'][] = $exception->getMessage();
+			}
+
+			$result[] = $entry;
+		}
+
+		return ['courses' => $result];
+	}
+
+	/**
+	 * Apply the sync. Lessons whose ids are given are removed afterwards.
+	 *
+	 * @param array<int|string> $deleteLessonIds
+	 * @return array<string, mixed>
+	 */
+	public function syncApply(string $userId, array $deleteLessonIds): array {
+		$created = 0;
+		$overwritten = 0;
+		$deleted = 0;
+		$errors = [];
+
+		foreach ($this->plannerService->getBootstrap($userId)['courses'] as $course) {
+			$path = trim((string)($course['mdFilePath'] ?? ''));
+			if ($path === '') {
+				continue;
+			}
+
+			try {
+				$build = $this->buildPlanFromPath($userId, $path);
+				if ($build['errors'] !== []) {
+					$errors = array_merge($errors, $build['errors']);
+					continue;
+				}
+				$result = $this->jsonPlanService->importCoursePlan($userId, (int)$course['id'], $build['plan']);
+				$created += (int)($result['summary']['lessonsCreated'] ?? 0);
+				$overwritten += (int)($result['summary']['lessonsOverwritten'] ?? 0);
+			} catch (\Throwable $exception) {
+				$errors[] = (string)$course['name'] . ': ' . $exception->getMessage();
+			}
+		}
+
+		foreach ($deleteLessonIds as $lessonId) {
+			try {
+				$this->plannerService->deleteLesson($userId, (int)$lessonId);
+				$deleted++;
+			} catch (\Throwable $exception) {
+				// Lesson already gone – ignore.
+			}
+		}
+
+		return [
+			'summary' => ['created' => $created, 'overwritten' => $overwritten, 'deleted' => $deleted],
+			'errors' => $errors,
+		];
 	}
 
 	/**
@@ -97,8 +205,11 @@ class MarkdownImportService {
 		foreach ($files as $file) {
 			$parsed = $this->parseFile((string)$file->getContent(), $file->getName());
 			$errors = array_merge($errors, $parsed['errors']);
+
+			// Files referenced relatively (images, PDFs …) live next to the .md file.
+			$assetFolder = $file->getParent();
 			foreach ($parsed['lessons'] as $lesson) {
-				$lessons[] = $lesson;
+				$lessons[] = $this->attachLocalFiles($lesson, $assetFolder);
 			}
 		}
 
@@ -119,6 +230,73 @@ class MarkdownImportService {
 
 	private function isMarkdown(string $name): bool {
 		return (bool)preg_match('/\.(md|markdown)$/i', $name);
+	}
+
+	/**
+	 * Loads every locally referenced file of a lesson so the import can turn
+	 * them into real attachments.
+	 *
+	 * @param array<string, mixed> $lesson
+	 * @return array<string, mixed>
+	 */
+	private function attachLocalFiles(array $lesson, Folder $folder): array {
+		$items = [];
+		foreach ((array)($lesson['items'] ?? []) as $item) {
+			$item['files'] = $this->collectLocalFiles((string)($item['description'] ?? ''), $folder);
+			$items[] = $item;
+		}
+		$lesson['items'] = $items;
+		return $lesson;
+	}
+
+	/**
+	 * @return array<int, array{name: string, content: string, mime: string}>
+	 */
+	private function collectLocalFiles(string $markdown, Folder $folder): array {
+		if (!preg_match_all('/!?\[[^\]]*\]\(\s*([^)\s]+)/', $markdown, $matches)) {
+			return [];
+		}
+
+		$result = [];
+		$seen = [];
+		foreach ($matches[1] as $raw) {
+			$ref = trim($raw, "<>\"'");
+			if ($ref === '' || !$this->isLocalReference($ref)) {
+				continue;
+			}
+			$ref = rawurldecode($ref);
+			if (str_contains($ref, '..')) {
+				continue;
+			}
+			$key = mb_strtolower($ref);
+			if (isset($seen[$key])) {
+				continue;
+			}
+			$seen[$key] = true;
+
+			try {
+				$node = $folder->get($ref);
+				if ($node instanceof File) {
+					$result[] = [
+						'name' => basename($ref),
+						'content' => (string)$node->getContent(),
+						'mime' => (string)$node->getMimeType(),
+					];
+				}
+			} catch (\Throwable $exception) {
+				// Referenced file is missing – ignore, the link stays as written.
+			}
+		}
+
+		return $result;
+	}
+
+	private function isLocalReference(string $ref): bool {
+		if (str_starts_with($ref, '#') || str_starts_with($ref, '/') || str_starts_with($ref, '//')) {
+			return false;
+		}
+		// Anything with a scheme (http:, https:, mailto:, data: …) is external.
+		return !preg_match('#^[a-z][a-z0-9+.\-]*:#i', $ref);
 	}
 
 	/**
@@ -172,7 +350,7 @@ class MarkdownImportService {
 	 * @return array<string, mixed>
 	 */
 	private function parseLessonSection(array $section, string $fileName): array {
-		$meta = ['date' => null, 'slot' => null, 'title' => null, 'goal' => null];
+		$meta = ['date' => null, 'slot' => null, 'title' => null, 'goal' => null, 'reflection' => null];
 
 		$index = 0;
 		$total = count($section);
@@ -182,8 +360,10 @@ class MarkdownImportService {
 			if ($trimmed === '' || $trimmed === '---') {
 				continue;
 			}
-			if (preg_match('/^\s*(date|slot|title|goal)\s*:\s*(.*?)\s*$/i', $line, $kv)) {
-				$meta[strtolower($kv[1])] = trim($kv[2], " \t\"'");
+			if (preg_match('/^\s*(date|slot|title|goal|reflection|fazit)\s*:\s*(.*?)\s*$/i', $line, $kv)) {
+				$key = strtolower($kv[1]);
+				$key = $key === 'fazit' ? 'reflection' : $key;
+				$meta[$key] = trim($kv[2], " \t\"'");
 				continue;
 			}
 			break;
@@ -225,21 +405,53 @@ class MarkdownImportService {
 			$title = preg_replace('/\.(md|markdown)$/i', '', $fileName) ?: 'Neue Stunde';
 		}
 
-		$normalizedItems = array_map(static function (array $item): array {
+		$normalizedItems = array_map(function (array $item): array {
+			$split = $this->extractTeacherNote($item['lines']);
 			return [
 				'title' => $item['title'] !== '' ? $item['title'] : 'Element',
-				'description' => trim(implode("\n", $item['lines'])),
+				'description' => trim(implode("\n", $split['lines'])),
+				'teacherNote' => $split['note'],
 			];
 		}, $items);
+
+		// A note before the first "##" belongs to the lesson description block.
+		$lessonSplit = $this->extractTeacherNote($descriptionLines);
 
 		return [
 			'date' => $this->normalizeDate((string)($meta['date'] ?? '')),
 			'slot' => $meta['slot'],
 			'title' => $title,
 			'goal' => (string)($meta['goal'] ?? ''),
-			'description' => trim($this->stripFences(implode("\n", $descriptionLines))),
+			'description' => trim($this->stripFences(implode("\n", $lessonSplit['lines']))),
+			'reflection' => trim((string)($meta['reflection'] ?? '') . ($lessonSplit['note'] !== '' ? "\n" . $lessonSplit['note'] : '')),
 			'items' => $normalizedItems,
 		];
+	}
+
+	/**
+	 * Pulls internal teacher notes out of the visible text. Supported markers at
+	 * the start of a line: "Hinweis:", "Lehrer:", "Lehrerhinweis:", "Note:"
+	 * (optionally preceded by "> " or "- ").
+	 *
+	 * @param array<int, string> $lines
+	 * @return array{lines: array<int, string>, note: string}
+	 */
+	private function extractTeacherNote(array $lines): array {
+		$kept = [];
+		$notes = [];
+
+		foreach ($lines as $line) {
+			if (preg_match('/^\s*(?:[>\-\*]\s*)?(?:hinweis|lehrerhinweis|lehrer|note)\s*:\s*(.*)$/iu', $line, $m)) {
+				$note = trim($m[1]);
+				if ($note !== '') {
+					$notes[] = $note;
+				}
+				continue;
+			}
+			$kept[] = $line;
+		}
+
+		return ['lines' => $kept, 'note' => implode("\n", $notes)];
 	}
 
 	/**

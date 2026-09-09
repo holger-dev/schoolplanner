@@ -9,6 +9,7 @@ Heute steigen wir in Python ein. Material: [Python-Doku](https://docs.python.org
 
 ## Warm-up
 Was ist eine Variable? Beispiele aus dem Alltag sammeln.
+Hinweis: Nur 5 Minuten einplanen – dieser Text ist nur intern sichtbar.
 
 ## Übung
 Schreibt ein Programm, das nach dem Namen fragt und grüßt.

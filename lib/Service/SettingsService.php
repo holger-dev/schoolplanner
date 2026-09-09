@@ -13,6 +13,8 @@ class SettingsService {
 		'sftp_password',
 		'sftp_remote_path',
 		'public_base_url',
+		'deck_board_id',
+		'deck_stack_id',
 	];
 
 	public function __construct(

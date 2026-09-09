@@ -4,9 +4,61 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.2.5] – 2026-09-09
+
+### Hinzugefügt
+- **„Deckkarte anlegen"** als eigener Button in der linken Navigation (zwischen
+  „Blockansicht" und „Planung veröffentlichen"). Im Modal werden Titel, Text und
+  Fälligkeitsdatum eingetragen – Board und Liste sind bereits vorausgewählt.
+- **Deck-Standard in den Einstellungen**: Board und Liste werden einmal
+  ausgewählt und für jede neue Karte automatisch übernommen.
+
+### Geändert
+- Die **kursspezifische Deck-Zuordnung** wurde entfernt; Deck wird jetzt global
+  konfiguriert. Der Eintrag „Deck" im Kurs-Menü entfällt.
+- Beim Öffnen von „Deckkarte anlegen" liegt der Cursor direkt im **Titel-Feld**,
+  statt das Board-Dropdown zu öffnen.
+- Doku und Beispieldateien beschreiben jetzt Lehrerhinweise (`Hinweis:`),
+  Markdown-Tabellen und Anhänge aus dem Kurs-Ordner.
+
+### Behoben
+- Die **Deck-Auswahl in den Einstellungen blieb leer**, solange noch kein Board
+  gespeichert war – die Boards werden jetzt immer geladen; bei Problemen
+  erscheint ein Hinweis mit „Erneut laden".
+
+## [1.2.4] – 2026-06-04
+
+### Hinzugefügt
+- **Markdown-Datei an einen Kurs binden** (Kurseinstellungen → „Angebundene
+  Markdown-Datei"). Über den neuen Button **„MD-Files aktualisieren"** links
+  werden alle angebundenen Dateien auf einmal neu eingelesen.
+- **Vorschau mit Konfliktabfrage** vor dem Aktualisieren: pro Kurs wird gezeigt,
+  welche Stunden neu angelegt bzw. aktualisiert werden. Stunden, die es in der
+  App, aber nicht mehr in der MD-Datei gibt, lassen sich einzeln zum Löschen
+  anhaken – ohne Häkchen bleiben sie erhalten.
+- **Verlinkte Bilder, PDFs und andere Dateien** aus dem Kurs-Ordner werden beim
+  Import als echte Anhänge übernommen und beim Veröffentlichen mit hochgeladen;
+  relative Links im Markdown werden automatisch auf den Asset-Pfad umgeschrieben,
+  sodass Bilder direkt auf der Schüler-Seite erscheinen.
+
+### Geändert
+- **Markdown-Tabellen** werden jetzt korrekt gerendert (Tabellen-Erweiterung
+  aktiviert) und auf der veröffentlichten Seite sauber gestaltet.
+- Das **Live-Modus-Fenster** nutzt jetzt die volle Bildschirmbreite.
+
+### Behoben
+- **Beim erneuten Import bleibt der Status der Elemente erhalten**: bereits
+  veröffentlichte (und als „aktuell" markierte) Elemente werden nicht mehr
+  zurückgesetzt. Der Abgleich erfolgt über den Element-Titel.
+
 ## [1.2.3] – 2026-06-04
 
 ### Hinzugefügt
+- **Lehrer-Hinweise im Markdown-Import**: Zeilen, die mit `Hinweis:` (auch
+  `Lehrer:`, `Lehrerhinweis:`, `Note:`) beginnen, landen im internen Feld
+  „Hinweise für Lehrer:in" des Elements statt im Schüler-Text. Vor dem ersten
+  `##` gesetzt, füllen sie das „Fazit der Stunde"; alternativ als Kopfzeile
+  `reflection:` bzw. `fazit:`.
 - **Export als ODF-Präsentationen (alle Kurse auf einmal)**: Ein Button
   „Planung als ODP herunterladen" im Einstellungs-Menü (links). Ein Klick
   erzeugt ein einziges ZIP `Schoolplanner_<Datum_Zeit>.zip` mit je einem Ordner

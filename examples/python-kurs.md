@@ -27,9 +27,22 @@ Aufbauend auf der letzten Stunde lernen wir die wichtigsten Datentypen kennen.
 
 ## Wiederholung
 Kurzes Quiz zu Variablen.
+Hinweis: Ergebnisse nur mündlich sammeln, sonst dauert es zu lange.
 
 ## Input
-int und float für Zahlen, str für Text, bool für wahr/falsch.
+Die vier Typen, die wir zuerst brauchen:
+
+| Typ     | Wofür              | Beispiel      |
+|---------|--------------------|---------------|
+| `int`   | ganze Zahlen       | `alter = 14`  |
+| `float` | Kommazahlen        | `preis = 2.5` |
+| `str`   | Text               | `name = "Ida"`|
+| `bool`  | wahr / falsch      | `fertig = True` |
+
+Liegt eine Datei im selben Ordner wie diese `.md`, wird sie beim Import als
+echter Anhang übernommen – z. B. [AB Datentypen](ab-datentypen.pdf) oder
+![Übersicht Datentypen](datentypen.png).
 
 ## Übung
 Probiert verschiedene type()-Aufrufe in der Konsole aus.
+Hinweis: Lösung liegt im Kursordner als loesung-datentypen.py.
