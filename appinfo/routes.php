@@ -53,5 +53,11 @@ return [
 		['name' => 'api#exportData', 'url' => '/api/export', 'verb' => 'POST'],
 		['name' => 'api#importData', 'url' => '/api/import', 'verb' => 'POST'],
 		['name' => 'api#publishCourse', 'url' => '/api/courses/{courseId}/publish', 'verb' => 'POST'],
+
+		// Schnittstelle für den Offline-Client (School Planner Offline).
+		['name' => 'sync#info', 'url' => '/api/v1/info', 'verb' => 'GET'],
+		['name' => 'sync#pull', 'url' => '/api/v1/sync', 'verb' => 'GET'],
+		['name' => 'sync#push', 'url' => '/api/v1/state', 'verb' => 'POST'],
+		['name' => 'sync#preflightedCors', 'url' => '/api/v1/{path}', 'verb' => 'OPTIONS', 'requirements' => ['path' => '.+']],
 	],
 ];

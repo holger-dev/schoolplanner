@@ -128,6 +128,21 @@ created) and a preview is shown before importing. See
 template, and how to embed links, images and files. Examples live in
 [`examples/`](examples/).
 
+## Offline companion app
+
+Since 1.3.0 the app exposes a small sync API under `/api/v1/` for
+[School Planner Offline](https://github.com/holger-dev/schoolplanneroffline) –
+a desktop companion for running lessons and recording participation without a
+network connection, syncing back afterwards.
+
+Clients authenticate with a Nextcloud **app password**, so it works with
+two-factor authentication and can be revoked individually. The API deliberately
+allows writing **state only** – participation, an element's published flag and
+the current step. Lesson content stays read-only and is edited in the web UI.
+
+See [`docs/api-sync.md`](docs/api-sync.md) for a step-by-step guide to creating
+the app password, the endpoints, and the conflict rule.
+
 ## Publishing
 
 The app publishes a static website via SFTP.

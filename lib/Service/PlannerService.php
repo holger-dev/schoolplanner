@@ -760,8 +760,24 @@ class PlannerService {
 			'goal' => (string)($row['goal'] ?? ''),
 			'description' => (string)($row['description'] ?? ''),
 			'reflection' => (string)($row['reflection'] ?? ''),
+			'updatedAt' => $this->mapTimestamp($row['updated_at'] ?? null),
 			'items' => [],
 		];
+	}
+
+	/**
+	 * Datenbankzeitstempel als ISO-8601 mit Zeitzone. Der Offline-Client
+	 * vergleicht darüber, wer bei einem Konflikt gewinnt.
+	 */
+	private function mapTimestamp(mixed $value): string {
+		if (!is_string($value) || $value === '') {
+			return '';
+		}
+		try {
+			return (new \DateTimeImmutable($value))->format(\DateTimeInterface::ATOM);
+		} catch (\Exception $e) {
+			return '';
+		}
 	}
 
 	/**
@@ -778,6 +794,7 @@ class PlannerService {
 			'published' => (bool)$row['published'],
 			'isCurrent' => (bool)($row['is_current'] ?? false),
 			'sortOrder' => (int)($row['sort_order'] ?? 0),
+			'updatedAt' => $this->mapTimestamp($row['updated_at'] ?? null),
 			'attachments' => [],
 		];
 	}

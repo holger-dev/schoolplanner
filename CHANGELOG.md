@@ -4,6 +4,27 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.3.0] – 2026-09-09
+
+### Hinzugefügt
+- **Sync-Schnittstelle für den Offline-Client** unter `/api/v1/`, angemeldet per
+  App-Passwort. Drei Endpunkte: `GET /info` (Verbindungstest), `GET /sync`
+  (Planung im Zeitfenster lesen) und `POST /state` (Mitarbeit, Freigabe und
+  aktuellen Schritt zurückschreiben).
+- Anleitung inklusive **App-Passwort einrichten** in
+  [`docs/api-sync.md`](docs/api-sync.md).
+- Stunden und Elemente liefern jetzt zusätzlich `updatedAt`; darüber entscheidet
+  der Abgleich, welche Fassung bei einem Konflikt gewinnt.
+
+### Hinweise
+- **Keine Datenbankänderung.** Alle benötigten Spalten waren bereits vorhanden.
+- Schreibbar sind über die Schnittstelle ausschließlich **Zustände** (Mitarbeit,
+  `published`, `isCurrent`). Inhalte werden nur gelesen und weiterhin in der
+  Weboberfläche gepflegt.
+- Die Endpunkte liegen bewusst in einem eigenen Controller mit
+  `@NoCSRFRequired`; die Routen der Weboberfläche behalten ihre
+  CSRF-Absicherung unverändert.
+
 ## [1.2.5] – 2026-09-09
 
 ### Hinzugefügt
