@@ -35,6 +35,7 @@ class SyncService {
 		private IDBConnection $connection,
 		private PlannerService $plannerService,
 		private StudentService $studentService,
+		private PublishService $publishService,
 	) {
 	}
 
@@ -127,19 +128,24 @@ class SyncService {
 	public function push(string $userId, array $payload): array {
 		$now = new DateTimeImmutable();
 
+		$participation = $this->pushParticipation(
+			$userId,
+			is_array($payload['participation'] ?? null) ? $payload['participation'] : [],
+			$now
+		);
+		$items = $this->pushItems(
+			$userId,
+			is_array($payload['items'] ?? null) ? $payload['items'] : [],
+			$now
+		);
+
 		return [
 			'apiVersion' => self::API_VERSION,
 			'serverTime' => $now->format(DateTimeInterface::ATOM),
-			'participation' => $this->pushParticipation(
-				$userId,
-				is_array($payload['participation'] ?? null) ? $payload['participation'] : [],
-				$now
-			),
-			'items' => $this->pushItems(
-				$userId,
-				is_array($payload['items'] ?? null) ? $payload['items'] : [],
-				$now
-			),
+			'participation' => $participation,
+			'items' => $items,
+			// Freigaben wirken erst, wenn die Schueler-Seite neu erzeugt wird.
+			'published' => $this->republish($userId, $items),
 		];
 	}
 
@@ -157,6 +163,44 @@ class SyncService {
 			'user' => $userId,
 			'courses' => count($courses),
 		];
+	}
+
+	/**
+	 * Betroffene Kurse neu veroeffentlichen.
+	 *
+	 * Ohne diesen Schritt landet eine Freigabe zwar in der Datenbank, die
+	 * Schueler-Seite bliebe aber auf dem alten Stand - der Sinn des Freigebens
+	 * ginge damit verloren. Fehler (etwa fehlende SFTP-Zugangsdaten) brechen
+	 * den Abgleich nicht ab, werden aber gemeldet, damit sie nicht unbemerkt
+	 * bleiben.
+	 *
+	 * @param array<int, array<string, mixed>> $itemResults
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function republish(string $userId, array $itemResults): array {
+		$courseIds = [];
+		foreach ($itemResults as $result) {
+			if (($result['result'] ?? '') !== 'applied') {
+				continue;
+			}
+			try {
+				$courseIds[$this->plannerService->getCourseIdForItem($userId, (int)$result['id'])] = true;
+			} catch (\Throwable $e) {
+				// Element inzwischen weg - dann gibt es auch nichts zu veroeffentlichen.
+			}
+		}
+
+		$out = [];
+		foreach (array_keys($courseIds) as $courseId) {
+			try {
+				$this->publishService->publishCourse($userId, (int)$courseId);
+				$out[] = ['courseId' => (int)$courseId, 'ok' => true];
+			} catch (\Throwable $e) {
+				$out[] = ['courseId' => (int)$courseId, 'ok' => false, 'error' => $e->getMessage()];
+			}
+		}
+
+		return $out;
 	}
 
 	// ------------------------------------------------------------------

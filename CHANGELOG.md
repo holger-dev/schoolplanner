@@ -4,6 +4,17 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.3.1] – 2026-09-09
+
+### Behoben
+- **Freigaben aus dem Offline-Client erreichten die Schüler-Seite nicht.** Die
+  Weboberfläche stößt nach einer Änderung ein erneutes Veröffentlichen an; die
+  Sync-Schnittstelle schrieb dagegen nur in die Datenbank. Betroffene Kurse
+  werden jetzt nach jedem erfolgreichen `POST /api/v1/state` neu erzeugt.
+- Die Antwort enthält dazu ein Feld `published` mit dem Ergebnis je Kurs. Fehler
+  (etwa fehlende SFTP-Zugangsdaten) brechen den Abgleich nicht ab, werden dem
+  Client aber gemeldet, statt unbemerkt zu bleiben.
+
 ## [1.3.0] – 2026-09-09
 
 ### Hinzugefügt

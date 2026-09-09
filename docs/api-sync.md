@@ -163,6 +163,15 @@ Antwort je Zeile:
 | `skipped` | der Serverstand ist neuer – verworfen, aktueller Stand liegt bei      |
 | `unknown` | Stunde, Element oder Schüler:in gehört nicht zu diesem Konto          |
 
+Ab 1.3.1 enthält die Antwort zusätzlich `published`: Für jeden Kurs, in dem ein
+Element geändert wurde, wird die **Schüler-Seite neu erzeugt** – sonst bliebe
+eine Freigabe ohne Wirkung. Schlägt das fehl (typisch: fehlende
+SFTP-Zugangsdaten), bricht der Abgleich nicht ab, meldet es aber:
+
+```json
+"published": [ { "courseId": 3, "ok": false, "error": "…" } ]
+```
+
 **Konfliktregel:** Ist der mitgelieferte `updatedAt` **neuer** als der
 gespeicherte, wird geschrieben; bei Gleichstand gewinnt der Server. Verglichen
 werden dabei nur Serverzeiten – `updatedAt` stammt aus einer früheren Antwort
