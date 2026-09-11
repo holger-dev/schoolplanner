@@ -87,6 +87,7 @@ class JsonPlanService {
 		$lessonReport = [];
 		$newCount = 0;
 		$overwriteCount = 0;
+		$unchangedCount = 0;
 		$seen = [];
 
 		foreach ($lessonsInput as $index => $lesson) {
@@ -103,11 +104,16 @@ class JsonPlanService {
 			}
 			$seen[$key] = true;
 
-			$status = isset($existing[$key]) ? 'overwrite' : 'new';
-			if ($status === 'overwrite') {
-				$overwriteCount++;
-			} else {
+			if (!isset($existing[$key])) {
+				$status = 'new';
 				$newCount++;
+			} elseif ($this->lessonMatches($existing[$key], $lesson)) {
+				// Inhaltlich identisch: Die Stunde wird beim Import uebersprungen.
+				$status = 'unchanged';
+				$unchangedCount++;
+			} else {
+				$status = 'overwrite';
+				$overwriteCount++;
 			}
 
 			$lessonReport[] = [
@@ -144,6 +150,7 @@ class JsonPlanService {
 			'summary' => [
 				'new' => $newCount,
 				'overwrite' => $overwriteCount,
+				'unchanged' => $unchangedCount,
 				'linksNew' => $linksNew,
 				'studentsNew' => $studentsNew,
 			],
@@ -166,9 +173,19 @@ class JsonPlanService {
 
 		$created = 0;
 		$overwritten = 0;
+		$unchanged = 0;
 
 		foreach ($parsed['lessons'] as $lesson) {
 			$key = $this->lessonKey((string)$lesson['date'], (int)$lesson['slot']);
+
+			// Inhaltlich unveraenderte Stunden gar nicht erst anfassen: Das spart
+			// nicht nur Arbeit, es haelt auch updated_at stabil und laesst
+			// Anhaenge und Freigaben unberuehrt.
+			if (isset($existing[$key]) && $this->lessonMatches($existing[$key], $lesson)) {
+				$unchanged++;
+				continue;
+			}
+
 			$fields = [
 				'lessonDate' => (string)$lesson['date'],
 				'lessonSlot' => (int)$lesson['slot'],
@@ -204,6 +221,7 @@ class JsonPlanService {
 			'summary' => [
 				'lessonsCreated' => $created,
 				'lessonsOverwritten' => $overwritten,
+				'lessonsUnchanged' => $unchanged,
 				'studentsImported' => $studentsImported,
 			],
 		];
@@ -397,6 +415,107 @@ class JsonPlanService {
 
 	private function lessonKey(string $date, int $slot): string {
 		return $date . '#' . $slot;
+	}
+
+	/**
+	 * Vergleicht eine vorhandene Stunde mit der aus der Datei gelesenen.
+	 *
+	 * Verglichen wird bewusst die Form, in der die Daten GESCHRIEBEN wuerden –
+	 * inklusive trim und Laengenbegrenzung –, sonst gaelte eine Stunde schon
+	 * wegen eines Leerzeichens als geaendert.
+	 *
+	 * Im Zweifel lautet die Antwort "nicht gleich": Eine faelschlich als
+	 * unveraendert eingestufte Stunde wuerde eine echte Aenderung verschlucken,
+	 * eine faelschlich als geaendert eingestufte kostet nur einen ueberfluessigen
+	 * Schreibvorgang.
+	 *
+	 * @param array<string, mixed> $existing Stunde aus der Datenbank
+	 * @param array<string, mixed> $incoming Stunde aus der Markdown-/JSON-Quelle
+	 */
+	private function lessonMatches(array $existing, array $incoming): bool {
+		if (!isset($existing['items']) || !is_array($existing['items'])) {
+			return false;                      // ohne Elemente kein Vergleich
+		}
+
+		$head = static function (string $title, string $goal, string $description, string $reflection): array {
+			return [
+				'title' => mb_substr(trim($title) ?: 'Neue Stunde', 0, 255),
+				'goal' => mb_substr(trim($goal), 0, 255),
+				'description' => str_replace("\r\n", "\n", $description),
+				'reflection' => str_replace("\r\n", "\n", $reflection),
+			];
+		};
+
+		$left = $head(
+			(string)($existing['title'] ?? ''),
+			(string)($existing['goal'] ?? ''),
+			(string)($existing['description'] ?? ''),
+			(string)($existing['reflection'] ?? '')
+		);
+		$right = $head(
+			(string)($incoming['title'] ?? ''),
+			(string)($incoming['goal'] ?? ''),
+			(string)($incoming['description'] ?? ''),
+			(string)($incoming['reflection'] ?? '')
+		);
+		if ($left !== $right) {
+			return false;
+		}
+
+		$existingItems = array_values($existing['items']);
+		$incomingItems = is_array($incoming['items'] ?? null) ? array_values($incoming['items']) : [];
+		if (count($existingItems) !== count($incomingItems)) {
+			return false;
+		}
+
+		foreach ($incomingItems as $index => $item) {
+			if (!is_array($item) || !is_array($existingItems[$index] ?? null)) {
+				return false;
+			}
+			$stored = $existingItems[$index];
+
+			// Referenzierte Dateien zaehlen mit: Tauscht jemand nur ein Bild aus,
+			// bleibt der Text gleich – die Stunde muss trotzdem neu geschrieben
+			// werden. Vorhandene Anhaenge werden dafuer ueber Name und Groesse
+			// verglichen, weil der Inhalt in der Datenbank nicht danebenliegt.
+			$incomingFiles = [];
+			foreach ((is_array($item['files'] ?? null) ? $item['files'] : []) as $file) {
+				if (!is_array($file)) {
+					continue;
+				}
+				$incomingFiles[] = [
+					'name' => (string)($file['name'] ?? ''),
+					'size' => strlen((string)($file['content'] ?? '')),
+				];
+			}
+			$storedFiles = [];
+			foreach ((is_array($stored['attachments'] ?? null) ? $stored['attachments'] : []) as $attachment) {
+				$storedFiles[] = [
+					'name' => (string)($attachment['fileName'] ?? ''),
+					'size' => (int)($attachment['size'] ?? 0),
+				];
+			}
+			sort($incomingFiles);
+			sort($storedFiles);
+
+			$a = [
+				'title' => mb_substr(trim((string)($stored['title'] ?? '')) ?: 'Element', 0, 255),
+				'description' => str_replace("\r\n", "\n", (string)($stored['description'] ?? '')),
+				'teacherNote' => mb_substr(trim((string)($stored['teacherNote'] ?? '')), 0, 255),
+				'files' => $storedFiles,
+			];
+			$b = [
+				'title' => mb_substr(trim((string)($item['title'] ?? '')) ?: 'Element', 0, 255),
+				'description' => str_replace("\r\n", "\n", (string)($item['description'] ?? '')),
+				'teacherNote' => mb_substr(trim((string)($item['teacherNote'] ?? '')), 0, 255),
+				'files' => $incomingFiles,
+			];
+			if ($a !== $b) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

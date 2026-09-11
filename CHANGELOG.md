@@ -4,6 +4,29 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.3.2] – 2026-09-11
+
+### Behoben
+- **Der Markdown-Abgleich meldete jede Stunde als „wird aktualisiert"**, auch
+  wenn sich nichts geändert hatte. Die Vorschau prüfte nur, *ob* eine Stunde mit
+  demselben Datum und Slot existiert – nie, ob sich inhaltlich etwas
+  unterscheidet.
+
+### Geändert
+- Vorschau und Import vergleichen jetzt den **Inhalt**: Titel, Ziel,
+  Beschreibung, Fazit sowie alle Elemente mit Text, Lehrerhinweis und
+  referenzierten Dateien. Unveränderte Stunden bekommen den Status
+  `unchanged` und werden in der Liste ausgegraut.
+- **Unveränderte Stunden werden beim Import übersprungen.** Das hält `updated_at`
+  stabil und lässt Anhänge und Freigaben unberührt, statt sie zu löschen und
+  neu anzulegen.
+- Verglichen wird die Form, in der die Daten *geschrieben* würden (inklusive
+  trim und Längenbegrenzung) – sonst gälte eine Stunde schon wegen eines
+  Leerzeichens als geändert. Im Zweifel lautet die Antwort „nicht gleich":
+  Eine fälschlich als unverändert eingestufte Stunde würde eine echte Änderung
+  verschlucken, der umgekehrte Fall kostet nur einen überflüssigen
+  Schreibvorgang.
+
 ## [1.3.1] – 2026-09-09
 
 ### Behoben

@@ -108,6 +108,7 @@ class MarkdownImportService {
 	public function syncApply(string $userId, array $deleteLessonIds): array {
 		$created = 0;
 		$overwritten = 0;
+		$unchanged = 0;
 		$deleted = 0;
 		$errors = [];
 
@@ -126,6 +127,7 @@ class MarkdownImportService {
 				$result = $this->jsonPlanService->importCoursePlan($userId, (int)$course['id'], $build['plan']);
 				$created += (int)($result['summary']['lessonsCreated'] ?? 0);
 				$overwritten += (int)($result['summary']['lessonsOverwritten'] ?? 0);
+				$unchanged += (int)($result['summary']['lessonsUnchanged'] ?? 0);
 			} catch (\Throwable $exception) {
 				$errors[] = (string)$course['name'] . ': ' . $exception->getMessage();
 			}
@@ -141,7 +143,12 @@ class MarkdownImportService {
 		}
 
 		return [
-			'summary' => ['created' => $created, 'overwritten' => $overwritten, 'deleted' => $deleted],
+			'summary' => [
+				'created' => $created,
+				'overwritten' => $overwritten,
+				'unchanged' => $unchanged,
+				'deleted' => $deleted,
+			],
 			'errors' => $errors,
 		];
 	}

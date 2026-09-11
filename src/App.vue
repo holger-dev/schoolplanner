@@ -648,13 +648,14 @@
 					</NcNoteCard>
 
 					<template v-else>
-						<NcNoteCard type="success">
+						<NcNoteCard :type="entry.summary.new || entry.summary.overwrite ? 'success' : 'info'">
 							{{ entry.summary.new }} neu · {{ entry.summary.overwrite }} werden aktualisiert
+							<template v-if="entry.summary.unchanged">· {{ entry.summary.unchanged }} unverändert</template>
 						</NcNoteCard>
 						<ul class="plan-lesson-list">
-							<li v-for="(lesson, i) in entry.lessons" :key="`l-${entry.courseId}-${i}`">
-								<span class="plan-badge" :class="lesson.status === 'overwrite' ? 'plan-badge--overwrite' : 'plan-badge--new'">
-									{{ lesson.status === 'overwrite' ? 'aktualisieren' : 'neu' }}
+							<li v-for="(lesson, i) in entry.lessons" :key="`l-${entry.courseId}-${i}`" :class="{ 'is-unchanged': lesson.status === 'unchanged' }">
+								<span class="plan-badge" :class="planBadgeClass(lesson.status)">
+									{{ planBadgeLabel(lesson.status, 'aktualisieren') }}
 								</span>
 								{{ lesson.date }} · {{ lesson.slot }}. Std. · {{ lesson.title }}
 							</li>
@@ -926,12 +927,13 @@
 					<div v-if="planPreview && planPreview.valid" class="plan-preview">
 						<NcNoteCard type="success">
 							{{ planPreview.summary.new }} neue Stunden, {{ planPreview.summary.overwrite }} werden überschrieben,
+							<template v-if="planPreview.summary.unchanged">{{ planPreview.summary.unchanged }} bleiben unverändert,</template>
 							{{ planPreview.summary.studentsNew }} neue Schüler:innen, {{ planPreview.summary.linksNew }} neue Links.
 						</NcNoteCard>
 						<ul class="plan-lesson-list">
-							<li v-for="(lesson, index) in planPreview.lessons" :key="`plan-lesson-${index}`">
-								<span class="plan-badge" :class="lesson.status === 'overwrite' ? 'plan-badge--overwrite' : 'plan-badge--new'">
-									{{ lesson.status === 'overwrite' ? 'überschreiben' : 'neu' }}
+							<li v-for="(lesson, index) in planPreview.lessons" :key="`plan-lesson-${index}`" :class="{ 'is-unchanged': lesson.status === 'unchanged' }">
+								<span class="plan-badge" :class="planBadgeClass(lesson.status)">
+									{{ planBadgeLabel(lesson.status, 'überschreiben') }}
 								</span>
 								{{ lesson.date }} · {{ lesson.slot }}. Std. · {{ lesson.title }}
 								<span v-if="lesson.itemCount">({{ lesson.itemCount }} Elemente)</span>
@@ -3044,6 +3046,16 @@ export default {
 				showError('Einstellungen konnten nicht gespeichert werden.')
 			}
 		},
+		planBadgeClass(status) {
+			if (status === 'unchanged') return 'plan-badge--unchanged'
+			if (status === 'overwrite') return 'plan-badge--overwrite'
+			return 'plan-badge--new'
+		},
+		planBadgeLabel(status, overwriteLabel) {
+			if (status === 'unchanged') return 'unverändert'
+			if (status === 'overwrite') return overwriteLabel
+			return 'neu'
+		},
 		triggerImportPicker() {
 			document.getElementById('planner-import-input')?.click()
 		},
@@ -3837,6 +3849,15 @@ export default {
 .plan-badge--new {
 	background: rgba(34, 197, 94, 0.16);
 	color: #15803d;
+}
+
+.plan-lesson-list li.is-unchanged {
+	opacity: 0.55;
+}
+
+.plan-badge--unchanged {
+	background: var(--color-background-dark);
+	color: var(--color-text-maxcontrast);
 }
 
 .plan-badge--overwrite {
