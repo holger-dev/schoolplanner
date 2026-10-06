@@ -252,11 +252,15 @@ class PublishService {
 				static fn (array $item): bool => (bool)$item['published']
 			));
 
-			return '<a class="lesson-list-item' . ($isCurrent ? ' lesson-list-item--active' : '') . '" href="#' . $this->escape($panelId) . '" data-lesson-panel="' . $this->escape($panelId) . '">'
-				. '<div class="lesson-list-item__meta"><span>' . $this->escape($this->formatLessonDate($lesson['lessonDate'])) . '</span>' . $badge . '</div>'
-				. '<h3>' . $this->escape($lesson['title']) . '</h3>'
-				. '<p>' . $this->escape($this->truncateText((string)($lesson['goal'] ?? ''), 60) ?: $this->excerptMarkdown((string)($lesson['description'] ?? ''))) . '</p>'
-				. '<span class="lesson-list-item__footer">' . $this->escape((string)$publishedCount) . ' veröffentlicht</span>'
+			// Bewusst eine Zeile je Stunde: Bei 30 Terminen ist eine Liste aus
+			// Kacheln mit Zielsatz nicht mehr zu ueberblicken.
+			$short = (new DateTimeImmutable($lesson['lessonDate']))->format('d.m.');
+			$weekday = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][(int)(new DateTimeImmutable($lesson['lessonDate']))->format('N') - 1];
+
+			return '<a class="lesson-list-item' . ($isCurrent ? ' lesson-list-item--active' : '') . ($isToday ? ' lesson-list-item--today' : '') . '" href="#' . $this->escape($panelId) . '" data-lesson-panel="' . $this->escape($panelId) . '" title="' . $this->escape($lesson['title']) . '">'
+				. '<span class="lli-date">' . $this->escape($weekday . ' ' . $short) . '</span>'
+				. '<span class="lli-title">' . $this->escape($lesson['title']) . '</span>'
+				. ($badge !== '' ? '<span class="lli-dot" aria-hidden="true"></span>' : '<span class="lli-count">' . $this->escape((string)$publishedCount) . '</span>')
 				. '</a>';
 		}, $course['lessons']);
 
@@ -270,15 +274,18 @@ class PublishService {
 
 		$linksBlock = $this->renderCourseLinks($course);
 
+		// Kursname und wichtige Links bleiben beim Scrollen stehen, damit die
+		// Links jederzeit erreichbar sind und der Kopf keine Hoehe frisst.
 		return $this->renderPage(
 			$course['name'],
-			'<nav class="breadcrumb"><a href="../../index.html">Kursübersicht</a></nav>'
-			. '<section class="course-hero' . ($linksBlock !== '' ? ' course-hero--split' : '') . '">'
-			. '<div class="course-hero__title"><h1>' . $this->escape($course['name']) . '</h1></div>'
+			'<div class="course-bar"><div class="course-bar__inner">'
+			. '<a class="course-bar__back" href="../../index.html">&larr; Kurse</a>'
+			. '<span class="course-bar__name">' . $this->escape($course['name']) . '</span>'
 			. $linksBlock
-			. '</section>'
+			. '</div></div>'
 			. '<section class="course-layout">'
-			. '<aside class="sidebar-card"><div class="sidebar-card__header"><h2>Stunden</h2></div>'
+			. '<aside class="sidebar-card"><div class="sidebar-card__header"><h2>Stunden</h2>'
+			. '<span class="sidebar-card__count">' . count($course['lessons']) . '</span></div>'
 			. ($lessonItems === [] ? '<p>Noch keine Stunden vorhanden.</p>' : '<div class="lesson-list-public">' . implode('', $lessonItems) . '</div>')
 			. '</aside>'
 			. '<div class="content-stage">' . $currentLessonMarkup . '</div>'
@@ -312,9 +319,7 @@ class PublishService {
 				. $this->escape((string)$link['label']) . '</a></li>';
 		}, $links);
 
-		return '<div class="hero-links"><h3>Wichtige Links</h3><ul class="hero-links__list">'
-			. implode('', $items)
-			. '</ul></div>';
+		return '<ul class="course-bar__links">' . implode('', $items) . '</ul>';
 	}
 
 	private function renderPage(string $title, string $content, ?string $refreshPath = null): string {
@@ -354,17 +359,35 @@ class PublishService {
 			. '.course-card h2{margin:0;font-size:1.5rem;}'
 			. '.course-card__meta{display:flex;justify-content:space-between;gap:1rem;margin-top:auto;font-size:.92rem;color:var(--page-muted);font-weight:600;}'
 			. '.breadcrumb{margin-bottom:18px;color:var(--page-muted);}'
+			. '.course-bar{position:sticky;top:10px;z-index:30;margin:0 0 18px;padding:9px 14px;border-radius:10px;background:rgba(12,19,33,.94);backdrop-filter:blur(12px);border:1px solid var(--page-line);box-shadow:var(--page-shadow);}'
+			. '.course-bar__inner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}'
+			. '.course-bar__back{color:var(--page-muted);font-size:.88rem;white-space:nowrap;}'
+			. '.course-bar__name{font-size:1.1rem;font-weight:700;margin-right:auto;}'
+			. '.course-bar__links{list-style:none;display:flex;gap:.4rem;flex-wrap:wrap;margin:0;padding:0;}'
+			. '.course-bar__links a{display:inline-flex;align-items:center;padding:.3rem .62rem;border-radius:999px;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);font-size:.85rem;font-weight:600;}'
+			. '.course-bar__links a:hover{text-decoration:none;border-color:rgba(56,189,248,.65);background:rgba(56,189,248,.2);}'
 			. '.course-layout{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:22px;align-items:start;}'
-			. '.sidebar-card{border-radius:10px;padding:20px;position:sticky;top:20px;}'
+			// Eigener Scrollbereich: Die Stundenliste laeuft unabhaengig vom Inhalt
+			// rechts, sonst muesste man fuer die naechste Stunde erst durch die
+			// ganze aktuelle scrollen.
+			. '.sidebar-card{border-radius:10px;padding:16px;position:sticky;top:72px;display:flex;flex-direction:column;max-height:calc(100vh - 96px);overflow:hidden;}'
+			. '.sidebar-card__header{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;flex:0 0 auto;}'
 			. '.sidebar-card__header h2,.card h2{margin:0;}'
+			. '.sidebar-card__header h2{font-size:1.05rem;}'
+			. '.sidebar-card__count{color:var(--page-muted);font-size:.85rem;font-weight:600;}'
 			. '.sidebar-card__header p{margin:.35rem 0 0;color:var(--page-muted);line-height:1.5;}'
-			. '.lesson-list-public{display:flex;flex-direction:column;gap:12px;margin-top:18px;}'
-			. '.lesson-list-item{display:block;padding:14px 14px 13px;border-radius:8px;border:1px solid transparent;background:var(--page-soft);transition:border-color .18s ease,transform .18s ease,background .18s ease;}'
-			. '.lesson-list-item:hover{text-decoration:none;transform:translateX(2px);border-color:rgba(56,189,248,.35);background:var(--page-soft-2);}'
-			. '.lesson-list-item--active{border-color:rgba(56,189,248,.65);background:linear-gradient(180deg,rgba(10,25,47,.96),rgba(12,19,34,.98));}'
-			. '.lesson-list-item__meta,.lesson-list-item__footer{display:flex;align-items:center;gap:.6rem;color:var(--page-muted);font-size:.9rem;}'
-			. '.lesson-list-item h3{margin:.45rem 0;font-size:1.08rem;}'
-			. '.lesson-list-item p{margin:0;color:var(--page-muted);line-height:1.5;}'
+			. '.lesson-list-public{display:flex;flex-direction:column;gap:2px;margin-top:12px;flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:4px;}'
+			. '.lesson-list-public::-webkit-scrollbar{width:8px;}'
+			. '.lesson-list-public::-webkit-scrollbar-thumb{background:rgba(148,167,194,.28);border-radius:99px;}'
+			. '.lesson-list-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:7px 9px;border-radius:7px;border:1px solid transparent;background:transparent;transition:background .15s ease,border-color .15s ease;}'
+			. '.lesson-list-item:hover{text-decoration:none;background:var(--page-soft);border-color:rgba(56,189,248,.28);}'
+			. '.lesson-list-item--active{border-color:rgba(56,189,248,.65);background:rgba(10,25,47,.92);}'
+			. '.lesson-list-item--today .lli-date{color:var(--page-accent);font-weight:700;}'
+			. '.lli-date{color:var(--page-muted);font-size:.82rem;white-space:nowrap;font-variant-numeric:tabular-nums;}'
+			. '.lli-title{font-size:.95rem;font-weight:600;color:var(--page-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+			. '.lesson-list-item--active .lli-title{color:var(--page-accent);}'
+			. '.lli-count{color:var(--page-muted);font-size:.78rem;font-variant-numeric:tabular-nums;}'
+			. '.lli-dot{width:7px;height:7px;border-radius:50%;background:var(--page-accent);display:inline-block;}'
 			. '.content-stage{display:flex;flex-direction:column;gap:18px;}'
 			. '.course-hero--split{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;}'
 			. '.course-hero__title{flex:1 1 320px;min-width:0;}'
@@ -376,7 +399,7 @@ class PublishService {
 			. '.lesson-panel{display:none;}'
 			. '.lesson-panel--active{display:block;}'
 			. '.card{border-radius:10px;padding:22px 24px;margin:0;}'
-			. '.card--focus{background:linear-gradient(180deg,rgba(24,34,53,.98),rgba(9,15,27,.98));padding-bottom:28vh;}'
+			. '.card--focus{background:linear-gradient(180deg,rgba(24,34,53,.98),rgba(9,15,27,.98));padding-bottom:28px;}'
 			. '.card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem;}'
 			. '.card__header h2{font-size:1.8rem;}'
 			. '.card__link{display:inline-flex;align-items:center;gap:.4rem;font-weight:700;}'
@@ -406,11 +429,11 @@ class PublishService {
 			. '.codeblock{position:relative;}'
 			. '.copy-button{position:absolute;top:.7rem;right:.7rem;border:1px solid #2e415f;background:#10192b;color:#dbeafe;border-radius:6px;padding:.3rem .55rem;font:600 .8rem Calibri,Candara,"Segoe UI",Arial,sans-serif;cursor:pointer;}'
 			. '.copy-button:hover{background:#16233a;}'
-			. '@media (max-width:960px){.site-shell{padding:22px 16px 40px;}.course-grid{grid-template-columns:1fr;}.course-layout{grid-template-columns:1fr;}.sidebar-card{position:static;}.course-hero--split{flex-direction:column;}.hero-links{min-width:0;width:100%;}.card__header{flex-direction:column;}.course-card__meta{flex-direction:column;align-items:flex-start;}}'
+			. '@media (max-width:960px){.site-shell{padding:22px 16px 40px;}.course-grid{grid-template-columns:1fr;}.course-layout{grid-template-columns:1fr;}.sidebar-card{position:static;max-height:none;overflow:visible;}.lesson-list-public{overflow:visible;max-height:none;}.course-bar{top:0;}.course-bar__name{font-size:1rem;}.course-hero--split{flex-direction:column;}.hero-links{min-width:0;width:100%;}.card__header{flex-direction:column;}.course-card__meta{flex-direction:column;align-items:flex-start;}}'
 			. '</style></head><body><div class="site-shell">' . $content . '</div>'
 			. $refreshConfig
 			. '<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>'
-			. "<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre code').forEach(function(block){if(window.hljs){window.hljs.highlightElement(block);}var pre=block.parentElement;if(pre&&pre.parentElement&&!pre.parentElement.classList.contains('codeblock')){var wrap=document.createElement('div');wrap.className='codeblock';pre.parentElement.insertBefore(wrap,pre);wrap.appendChild(pre);var btn=document.createElement('button');btn.type='button';btn.className='copy-button';btn.textContent='Copy';btn.addEventListener('click',function(){navigator.clipboard.writeText(block.innerText).then(function(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy';},1200);});});wrap.appendChild(btn);}});var links=document.querySelectorAll('.lesson-list-item[data-lesson-panel]');var panels=document.querySelectorAll('.lesson-panel');function scrollToCurrent(){var current=document.querySelector('.lesson-panel--active .published-item--current');if(current){window.setTimeout(function(){current.scrollIntoView({behavior:'smooth',block:'center'});},120);}}function activate(id){if(!id)return;links.forEach(function(link){link.classList.toggle('lesson-list-item--active',link.getAttribute('data-lesson-panel')===id);});panels.forEach(function(panel){panel.classList.toggle('lesson-panel--active',panel.id===id);});scrollToCurrent();}links.forEach(function(link){link.addEventListener('click',function(event){event.preventDefault();var id=link.getAttribute('data-lesson-panel');activate(id);if(history.replaceState){history.replaceState(null,'','#'+id);}else{location.hash=id;}});});var initial=location.hash?location.hash.slice(1):null;if(initial&&document.getElementById(initial)){activate(initial);}else{var active=document.querySelector('.lesson-panel--active');if(active){activate(active.id);}else{scrollToCurrent();}}var searchInput=document.getElementById('global-search');var resultBox=document.getElementById('search-results');if(searchInput&&resultBox&&Array.isArray(window.schoolplannerSearchEntries)){var entries=window.schoolplannerSearchEntries;function renderResults(matches){if(matches.length===0){resultBox.innerHTML='<div class=\"search-empty\">Keine Treffer gefunden.</div>';resultBox.hidden=false;return;}resultBox.innerHTML=matches.slice(0,12).map(function(entry){return '<div class=\"search-result\"><a href=\"'+entry.url+'\"><strong>'+entry.title+'</strong><span>'+entry.subtitle+'</span></a><span class=\"search-result__type\">'+entry.type+'</span></div>';}).join('');resultBox.hidden=false;}searchInput.addEventListener('input',function(){var value=(searchInput.value||'').trim().toLowerCase();if(value.length<3){resultBox.hidden=true;resultBox.innerHTML='';return;}var matches=entries.filter(function(entry){return typeof entry.search==='string'&&entry.search.indexOf(value)!==-1;});renderResults(matches);});}if(window.schoolplannerRefreshPath){var currentVersion=null;var poll=function(){fetch(window.schoolplannerRefreshPath+'?t='+Date.now(),{cache:'no-store'}).then(function(response){return response.ok?response.json():null;}).then(function(payload){if(!payload||!payload.updatedAt){return;}if(currentVersion===null){currentVersion=payload.updatedAt;return;}if(currentVersion!==payload.updatedAt){window.location.reload();}}).catch(function(){});};poll();window.setInterval(poll,4000);}});</script>"
+			. "<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('pre code').forEach(function(block){if(window.hljs){window.hljs.highlightElement(block);}var pre=block.parentElement;if(pre&&pre.parentElement&&!pre.parentElement.classList.contains('codeblock')){var wrap=document.createElement('div');wrap.className='codeblock';pre.parentElement.insertBefore(wrap,pre);wrap.appendChild(pre);var btn=document.createElement('button');btn.type='button';btn.className='copy-button';btn.textContent='Copy';btn.addEventListener('click',function(){navigator.clipboard.writeText(block.innerText).then(function(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy';},1200);});});wrap.appendChild(btn);}});var links=document.querySelectorAll('.lesson-list-item[data-lesson-panel]');var panels=document.querySelectorAll('.lesson-panel');var SCROLL_FLAG='sp-scroll-to-current';function scrollToCurrent(){var current=document.querySelector('.lesson-panel--active .published-item--current');if(current){window.setTimeout(function(){current.scrollIntoView({behavior:'smooth',block:'center'});},120);}}function scrollIfJustPublished(){var want=null;try{want=sessionStorage.getItem(SCROLL_FLAG);sessionStorage.removeItem(SCROLL_FLAG);}catch(e){}if(want){scrollToCurrent();}}function activate(id){if(!id)return;links.forEach(function(link){link.classList.toggle('lesson-list-item--active',link.getAttribute('data-lesson-panel')===id);});panels.forEach(function(panel){panel.classList.toggle('lesson-panel--active',panel.id===id);});}links.forEach(function(link){link.addEventListener('click',function(event){event.preventDefault();var id=link.getAttribute('data-lesson-panel');activate(id);if(history.replaceState){history.replaceState(null,'','#'+id);}else{location.hash=id;}});});var initial=location.hash?location.hash.slice(1):null;if(initial&&document.getElementById(initial)){activate(initial);}else{var active=document.querySelector('.lesson-panel--active');if(active){activate(active.id);}}scrollIfJustPublished();var searchInput=document.getElementById('global-search');var resultBox=document.getElementById('search-results');if(searchInput&&resultBox&&Array.isArray(window.schoolplannerSearchEntries)){var entries=window.schoolplannerSearchEntries;function renderResults(matches){if(matches.length===0){resultBox.innerHTML='<div class=\"search-empty\">Keine Treffer gefunden.</div>';resultBox.hidden=false;return;}resultBox.innerHTML=matches.slice(0,12).map(function(entry){return '<div class=\"search-result\"><a href=\"'+entry.url+'\"><strong>'+entry.title+'</strong><span>'+entry.subtitle+'</span></a><span class=\"search-result__type\">'+entry.type+'</span></div>';}).join('');resultBox.hidden=false;}searchInput.addEventListener('input',function(){var value=(searchInput.value||'').trim().toLowerCase();if(value.length<3){resultBox.hidden=true;resultBox.innerHTML='';return;}var matches=entries.filter(function(entry){return typeof entry.search==='string'&&entry.search.indexOf(value)!==-1;});renderResults(matches);});}if(window.schoolplannerRefreshPath){var currentVersion=null;var poll=function(){fetch(window.schoolplannerRefreshPath+'?t='+Date.now(),{cache:'no-store'}).then(function(response){return response.ok?response.json():null;}).then(function(payload){if(!payload||!payload.updatedAt){return;}if(currentVersion===null){currentVersion=payload.updatedAt;return;}if(currentVersion!==payload.updatedAt){try{sessionStorage.setItem(SCROLL_FLAG,'1');}catch(e){}window.location.reload();}}).catch(function(){});};poll();window.setInterval(poll,4000);}});</script>"
 			. '</body></html>';
 	}
 

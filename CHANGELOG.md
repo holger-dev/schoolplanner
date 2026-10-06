@@ -4,6 +4,24 @@ Alle nennenswerten Änderungen an School Planner. Das Format orientiert sich an
 [Keep a Changelog](https://keepachangelog.com/de/), die Versionierung folgt
 [SemVer](https://semver.org/lang/de/).
 
+## [1.3.3] – 2026-10-06
+
+### Geändert
+- **Die Schüler-Seite springt nicht mehr dauernd.** Das automatische Scrollen zum
+  aktuellen Element lief bei jedem Stundenwechsel und nach jedem Neuladen.
+  Jetzt passiert es **genau einmal** – nämlich dann, wenn gerade ein neues
+  Element freigegeben wurde.
+- **Wichtige Links sind jederzeit erreichbar.** Kursname und Links sitzen in
+  einer schmalen Leiste, die beim Scrollen oben stehen bleibt. Der große
+  Kopfbereich entfällt dafür.
+- **Die Stundenliste scrollt unabhängig vom Inhalt.** Vorher musste man erst
+  durch die ganze aktuelle Stunde scrollen, um zur nächsten zu kommen.
+- **Kompakte Stundenliste**: eine Zeile je Termin mit Wochentag, Datum, Titel und
+  Anzahl der freigegebenen Elemente – statt Kacheln mit Zielsatz. Bei 20 bis 30
+  Stunden war die alte Darstellung nicht mehr zu überblicken.
+- Der Leerraum unter der Stunde (vorher 28 % der Fensterhöhe) ist weg; er war nur
+  nötig, damit das automatische Scrollen mittig ausrichten konnte.
+
 ## [1.3.2] – 2026-09-11
 
 ### Behoben
